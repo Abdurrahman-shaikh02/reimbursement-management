@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Local configuration
+.env
+
+# Logs and OS / editor files
+*.log
+.DS_Store
+.vscode/
+.idea/
