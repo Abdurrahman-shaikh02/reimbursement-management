@@ -70,3 +70,74 @@ CREATE TABLE employee_phone (
         CHAR_LENGTH(phone) BETWEEN 7 AND 15 AND REGEXP_LIKE(phone, '^[+]?[0-9]+$'))
 ) ENGINE = InnoDB;
 
+-- -----------------------------------------------------------------------------
+-- applicant, manager: subclasses of EMPLOYEE, overlapping and partial [S1].
+-- Reduced with the textbook's method 1 [S3]: the superclass key is both the
+-- primary key and a foreign key. An employee may be in both tables, or neither.
+-- -----------------------------------------------------------------------------
+CREATE TABLE applicant (
+    employee_id      INT          NOT NULL,
+    bank_account_no  VARCHAR(18)  NOT NULL,                  -- digits stored as text [A11]
+    CONSTRAINT pk_applicant      PRIMARY KEY (employee_id),
+    CONSTRAINT uq_applicant_bank UNIQUE (bank_account_no),   -- second candidate key; no shared payout accounts [C2]
+    -- CASCADE: the subclass row is the same entity as the employee row [K3][§6.8.4]
+    CONSTRAINT fk_applicant_employee FOREIGN KEY (employee_id)
+        REFERENCES employee (employee_id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE manager (
+    employee_id     INT            NOT NULL,
+    approval_limit  DECIMAL(12,2)  NOT NULL,                 -- per manager, not per designation [A10]; DECIMAL for money [K5]
+    CONSTRAINT pk_manager PRIMARY KEY (employee_id),
+    CONSTRAINT fk_manager_employee FOREIGN KEY (employee_id)
+        REFERENCES employee (employee_id) ON DELETE CASCADE,
+    CONSTRAINT chk_manager_limit CHECK (approval_limit > 0)  -- [C12]
+) ENGINE = InnoDB;
+
+-- -----------------------------------------------------------------------------
+-- reimbursement: entity set REIMBURSEMENT (the claim header) [E3]
+--   SUBMITS  (APPLICANT 1 : N, REIMBURSEMENT total) folded in as applicant_id NOT NULL [R3][M1]
+--   APPROVES (MANAGER 1 : N CLAIM_PROCESS, both partial) folded in as
+--            approved_by, approval_date, remarks, all NULL while pending [R4][M2]
+--   CLAIM_PROCESS (the aggregation) needs no table: it uses this one [G1][M3]
+-- FD: reimbursement_id → all other columns                              (BCNF)
+-- total_amount is derived and NOT stored; see the view in 02_views.sql [A3]
+-- -----------------------------------------------------------------------------
+CREATE TABLE reimbursement (
+    reimbursement_id  INT           NOT NULL AUTO_INCREMENT,
+    applicant_id      INT           NOT NULL,                   -- who submitted (SUBMITS)
+    claim_type        VARCHAR(10)   NOT NULL,                   -- which subclass table holds the details [A6]
+    claim_date        DATE          NOT NULL DEFAULT (CURRENT_DATE),
+    status            VARCHAR(10)   NOT NULL DEFAULT 'SUBMITTED', -- [A5]
+    approved_by       INT           NULL,                       -- APPROVES: deciding manager (approve or reject)
+    approval_date     DATE          NULL,                       -- APPROVES: date of the decision [A9]
+    remarks           VARCHAR(255)  NULL,                       -- APPROVES: reason; required on rejection [A9]
+    CONSTRAINT pk_reimbursement PRIMARY KEY (reimbursement_id),
+    -- References applicant, not employee: only registered applicants can own claims [R3].
+    -- RESTRICT: claims are financial records and are kept [K3]. (MySQL would also refuse an
+    -- ON DELETE action here, because applicant_id and approved_by are used in CHECK C10.)
+    CONSTRAINT fk_reimbursement_applicant FOREIGN KEY (applicant_id)
+        REFERENCES applicant (employee_id),
+    -- References manager: a non-manager can never be the approver [S1]
+    CONSTRAINT fk_reimbursement_approver FOREIGN KEY (approved_by)
+        REFERENCES manager (employee_id),
+
+    -- [C5] the four statuses of the workflow [K4: CHECK ... IN, not ENUM or a lookup table]
+    CONSTRAINT chk_reimbursement_status CHECK (status IN ('SUBMITTED', 'APPROVED', 'REJECTED', 'PAID')),
+    -- [C6] the three claim types (disjoint, total specialization) [S2]
+    CONSTRAINT chk_reimbursement_type CHECK (claim_type IN ('TRAVEL', 'MEDICAL', 'BUSINESS')),
+    -- [C8] a decision exists exactly when the claim has left SUBMITTED
+    CONSTRAINT chk_reimbursement_decision CHECK (
+        (status = 'SUBMITTED' AND approved_by IS NULL AND approval_date IS NULL)
+        OR (status <> 'SUBMITTED' AND approved_by IS NOT NULL AND approval_date IS NOT NULL)),
+    -- [C9] a rejection needs a reason
+    CONSTRAINT chk_reimbursement_reject_remarks CHECK (
+        status <> 'REJECTED' OR (remarks IS NOT NULL AND TRIM(remarks) <> '')),
+    -- [C10] no one decides their own claim
+    CONSTRAINT chk_reimbursement_not_self CHECK (approved_by IS NULL OR approved_by <> applicant_id),
+    -- [C11] a claim cannot be decided before it is filed
+    CONSTRAINT chk_reimbursement_dates CHECK (approval_date IS NULL OR approval_date >= claim_date),
+
+    INDEX idx_reimbursement_status (status)   -- the manager's queue filters on status
+) ENGINE = InnoDB;
+
