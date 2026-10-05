@@ -141,3 +141,41 @@ CREATE TABLE reimbursement (
     INDEX idx_reimbursement_status (status)   -- the manager's queue filters on status
 ) ENGINE = InnoDB;
 
+-- -----------------------------------------------------------------------------
+-- Subclasses of REIMBURSEMENT: disjoint and total [S2], method 1 [S3].
+-- Disjointness (details row matches claim_type) is checked by trigger T3.
+-- Totality (every claim has its details row) is guaranteed by inserting both
+-- in one transaction (application rule A1) [K2].
+-- CASCADE: the details row is part of the claim [K3].
+-- -----------------------------------------------------------------------------
+CREATE TABLE travel_reimbursement (
+    reimbursement_id  INT           NOT NULL,
+    travel_from       VARCHAR(100)  NOT NULL,
+    travel_to         VARCHAR(100)  NOT NULL,
+    -- The distance of THIS trip as claimed. (travel_from, travel_to) → distance_km is
+    -- deliberately NOT an FD here [N1], otherwise this table would not be in 3NF.
+    distance_km       DECIMAL(7,1)  NOT NULL,
+    CONSTRAINT pk_travel PRIMARY KEY (reimbursement_id),
+    CONSTRAINT fk_travel_reimbursement FOREIGN KEY (reimbursement_id)
+        REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE,
+    CONSTRAINT chk_travel_distance CHECK (distance_km > 0)   -- [C12]
+) ENGINE = InnoDB;
+
+CREATE TABLE medical_reimbursement (
+    reimbursement_id  INT           NOT NULL,
+    hospital_name     VARCHAR(100)  NOT NULL,
+    treatment_type    VARCHAR(60)   NOT NULL,
+    CONSTRAINT pk_medical PRIMARY KEY (reimbursement_id),
+    CONSTRAINT fk_medical_reimbursement FOREIGN KEY (reimbursement_id)
+        REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+CREATE TABLE business_reimbursement (
+    reimbursement_id  INT           NOT NULL,
+    purpose           VARCHAR(200)  NOT NULL,
+    client_name       VARCHAR(100)  NULL,                    -- internal work has no client
+    CONSTRAINT pk_business PRIMARY KEY (reimbursement_id),
+    CONSTRAINT fk_business_reimbursement FOREIGN KEY (reimbursement_id)
+        REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
