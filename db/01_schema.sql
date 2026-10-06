@@ -179,3 +179,26 @@ CREATE TABLE business_reimbursement (
         REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
+-- -----------------------------------------------------------------------------
+-- expense_item: weak entity set EXPENSE_ITEM [W1]
+-- Key = owner's key + discriminator item_no (1, 2, 3 … within each claim) [§6.7.3].
+-- The identifying relationship CONTAINS needs no table [M3].
+-- FD: (reimbursement_id, item_no) → all other columns                   (BCNF)
+-- Items may change only while the claim is SUBMITTED: trigger T2.
+-- -----------------------------------------------------------------------------
+CREATE TABLE expense_item (
+    reimbursement_id  INT            NOT NULL,
+    item_no           SMALLINT       NOT NULL,               -- discriminator
+    category          VARCHAR(20)    NOT NULL,               -- [A8]
+    description       VARCHAR(200)   NOT NULL,
+    amount            DECIMAL(10,2)  NOT NULL,               -- exact money type [K5]
+    expense_date      DATE           NOT NULL,
+    receipt_path      VARCHAR(255)   NULL,                   -- file on disk, path here; optional [A7]
+    CONSTRAINT pk_expense_item PRIMARY KEY (reimbursement_id, item_no),
+    -- CASCADE: existence dependence of a weak entity [W1][K3]
+    CONSTRAINT fk_item_reimbursement FOREIGN KEY (reimbursement_id)
+        REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE,
+    CONSTRAINT chk_item_category CHECK (category IN                -- [C7]
+        ('FOOD', 'LODGING', 'FARE', 'FUEL', 'LOCAL_TRANSPORT', 'MEDICAL', 'SUPPLIES', 'OTHER')),
+    CONSTRAINT chk_item_amount CHECK (amount > 0)                   -- [C12]
+) ENGINE = InnoDB;
