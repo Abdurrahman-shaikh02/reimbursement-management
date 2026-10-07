@@ -12,4 +12,5 @@ render() {
 }
 render er_diagram 1600 1230
 render er_diagram_nokey 1600 950
+render schema_diagram 1560 760
 echo "wrote the PNG files"

@@ -272,7 +272,91 @@ def build_er(with_key=True):
     svg.save(HERE / 'er_diagram.svg')
 
 
+
+
+# ---------------------------------------------------------------------------
+# Relational schema diagram (textbook Section 2.4)
+# ---------------------------------------------------------------------------
+ROW = 24
+
+
+def table(svg, x, y, w, name, cols):
+    """cols: list of (name, tags) with tags a string of flags: P=primary key, U=unique,
+    F=foreign key, N=nullable. Returns dict of row centre y values."""
+    h = 30 + ROW * len(cols)
+    svg.add(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="white" stroke="{INK}" stroke-width="1.4"/>')
+    svg.add(f'<rect x="{x}" y="{y}" width="{w}" height="30" fill="{HEADER}" stroke="{INK}" stroke-width="1.4"/>')
+    svg.text(x + 10, y + 20, name, size=13.5, weight='bold')
+    rows = {}
+    for i, (col, tags) in enumerate(cols):
+        cy = y + 30 + ROW * i + ROW / 2
+        rows[col] = cy
+        if i:
+            svg.line([(x, cy - ROW / 2), (x + w, cy - ROW / 2)], width=0.6, color='#e5e7eb')
+        svg.text(x + 10, cy + 4.5, col, underline='solid' if 'P' in tags else None)
+        flags = [t for t, f in (('FK', 'F'), ('UQ', 'U'), ('null', 'N')) if f in tags]
+        if flags:
+            svg.text(x + w - 8, cy + 4, ' '.join(flags), size=10.5, anchor='end', color=MUTED)
+    return rows
+
+
+def fk(svg, pts):
+    svg.line(shorten(pts, 9), width=1.4, color=ACCENT)
+    ux, uy = unit(pts[-2], pts[-1])
+    tip = pts[-1]
+    bx, by = tip[0] - ux * 10, tip[1] - uy * 10
+    px, py = -uy * 5, ux * 5
+    svg.add(f'<polygon points="{tip[0]},{tip[1]} {bx + px},{by + py} {bx - px},{by - py}" fill="{ACCENT}"/>')
+
+
+def build_schema():
+    svg = Svg(1560, 760)
+    svg.text(40, 34, 'Reimbursement Management System — relational schema diagram', size=19, weight='bold')
+    svg.text(40, 56, 'Primary keys underlined. Arrows run from a foreign key to the primary key it references '
+             '(textbook Section 2.4). FK = foreign key, UQ = unique (a candidate key), null = may be NULL.',
+             size=12.5, color=MUTED)
+    svg.add('<g transform="translate(0,40)">')
+
+    ph = table(svg, 40, 70, 200, 'employee_phone', [('employee_id', 'PF'), ('phone', 'P')])
+    dp = table(svg, 40, 214, 200, 'department', [('dept_id', 'P'), ('dept_name', 'U'), ('location', '')])
+    em = table(svg, 310, 70, 220, 'employee', [
+        ('employee_id', 'P'), ('name', ''), ('email', 'U'), ('password_hash', ''), ('designation', ''),
+        ('date_of_joining', ''), ('dept_id', 'F'), ('supervisor_id', 'FN')])
+    ap = table(svg, 620, 70, 210, 'applicant', [('employee_id', 'PF'), ('bank_account_no', 'U')])
+    mg = table(svg, 620, 200, 210, 'manager', [('employee_id', 'PF'), ('approval_limit', '')])
+    rb = table(svg, 930, 70, 230, 'reimbursement', [
+        ('reimbursement_id', 'P'), ('applicant_id', 'F'), ('claim_type', ''), ('claim_date', ''),
+        ('status', ''), ('approved_by', 'FN'), ('approval_date', 'N'), ('remarks', 'N')])
+    ex = table(svg, 1260, 70, 250, 'expense_item', [
+        ('reimbursement_id', 'PF'), ('item_no', 'P'), ('category', ''), ('description', ''),
+        ('amount', ''), ('expense_date', ''), ('receipt_path', 'N')])
+    tr = table(svg, 1260, 290, 250, 'travel_reimbursement', [
+        ('reimbursement_id', 'PF'), ('travel_from', ''), ('travel_to', ''), ('distance_km', '')])
+    md = table(svg, 1260, 450, 250, 'medical_reimbursement', [
+        ('reimbursement_id', 'PF'), ('hospital_name', ''), ('treatment_type', '')])
+    bz = table(svg, 1260, 586, 250, 'business_reimbursement', [
+        ('reimbursement_id', 'PF'), ('purpose', ''), ('client_name', 'N')])
+
+    fk(svg, [(240, ph['employee_id']), (310, em['employee_id'])])
+    fk(svg, [(310, em['dept_id']), (240, dp['dept_id'])])
+    fk(svg, [(530, em['supervisor_id']), (560, em['supervisor_id']), (560, em['employee_id']), (530, em['employee_id'])])
+    fk(svg, [(620, ap['employee_id']), (530, ap['employee_id'])])
+    fk(svg, [(620, mg['employee_id']), (585, mg['employee_id']), (585, em['employee_id']), (530, em['employee_id'])])
+    fk(svg, [(930, rb['applicant_id']), (880, rb['applicant_id']), (880, ap['employee_id']), (830, ap['employee_id'])])
+    fk(svg, [(930, rb['approved_by']), (880, rb['approved_by']), (880, mg['employee_id']), (830, mg['employee_id'])])
+    fk(svg, [(1260, ex['reimbursement_id']), (1160, rb['reimbursement_id'])])
+    for t in (tr, md, bz):
+        fk(svg, [(1260, t['reimbursement_id']), (1215, t['reimbursement_id']), (1215, rb['reimbursement_id']), (1160, rb['reimbursement_id'])])
+
+    svg.add('</g>')
+    svg.text(40, 730, 'Lines that converge on one arrowhead reference the same primary key. Subclass tables (applicant, manager; '
+             'travel/medical/business_reimbursement) use the superclass key as both their primary key and a foreign key.',
+             size=12.5, color=MUTED)
+    svg.save(HERE / 'schema_diagram.svg')
+
+
 if __name__ == '__main__':
     build_er()
     build_er(with_key=False)
-    print('wrote er_diagram.svg, er_diagram_nokey.svg')
+    build_schema()
+    print('wrote er_diagram.svg, er_diagram_nokey.svg, schema_diagram.svg')
