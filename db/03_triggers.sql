@@ -100,4 +100,55 @@ BEGIN
     END IF;
 END$$
 
+-- -----------------------------------------------------------------------------
+-- T2: expense items are frozen once a manager has decided, otherwise the
+-- approved total could change afterwards. Also expense_date ≤ claim_date.
+-- One procedure, called from the three item triggers.
+-- -----------------------------------------------------------------------------
+CREATE PROCEDURE check_item_change(IN p_reimbursement_id INT, IN p_expense_date DATE)
+BEGIN
+    DECLARE v_status     VARCHAR(10);
+    DECLARE v_claim_date DATE;
+
+    SELECT status, claim_date INTO v_status, v_claim_date
+    FROM reimbursement
+    WHERE reimbursement_id = p_reimbursement_id;
+
+    -- v_status is NULL if the claim does not exist; the foreign key reports that case
+    IF v_status IS NOT NULL AND v_status <> 'SUBMITTED' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Expense items can be changed only while the claim is SUBMITTED.';
+    END IF;
+
+    IF p_expense_date IS NOT NULL AND p_expense_date > v_claim_date THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'An expense cannot be dated after the claim date.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_expense_item_bi
+BEFORE INSERT ON expense_item
+FOR EACH ROW
+BEGIN
+    CALL check_item_change(NEW.reimbursement_id, NEW.expense_date);
+END$$
+
+CREATE TRIGGER trg_expense_item_bu
+BEFORE UPDATE ON expense_item
+FOR EACH ROW
+BEGIN
+    IF NEW.reimbursement_id <> OLD.reimbursement_id THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'An expense item cannot be moved to another claim.';
+    END IF;
+    CALL check_item_change(NEW.reimbursement_id, NEW.expense_date);
+END$$
+
+CREATE TRIGGER trg_expense_item_bd
+BEFORE DELETE ON expense_item
+FOR EACH ROW
+BEGIN
+    CALL check_item_change(OLD.reimbursement_id, NULL);
+END$$
+
 DELIMITER ;
