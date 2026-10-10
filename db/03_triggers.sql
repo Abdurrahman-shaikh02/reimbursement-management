@@ -192,4 +192,45 @@ BEGIN
     CALL check_claim_type(NEW.reimbursement_id, 'BUSINESS');
 END$$
 
+-- -----------------------------------------------------------------------------
+-- T4: SUPERVISES must stay a tree [R2].
+-- On INSERT the new row has no subordinates yet, so only a self-reference
+-- (possible when an explicit employee_id is given) needs checking.
+-- On UPDATE, walk up from the new supervisor; reaching this employee means a cycle.
+-- -----------------------------------------------------------------------------
+CREATE TRIGGER trg_employee_bi
+BEFORE INSERT ON employee
+FOR EACH ROW
+BEGIN
+    IF NEW.supervisor_id IS NOT NULL AND NEW.supervisor_id = NEW.employee_id THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'An employee cannot supervise themselves.';
+    END IF;
+END$$
+
+CREATE TRIGGER trg_employee_bu
+BEFORE UPDATE ON employee
+FOR EACH ROW
+BEGIN
+    IF NEW.supervisor_id IS NOT NULL AND NEW.supervisor_id = NEW.employee_id THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'An employee cannot supervise themselves.';
+    END IF;
+
+    IF NEW.supervisor_id IS NOT NULL AND NOT (NEW.supervisor_id <=> OLD.supervisor_id) THEN
+        IF EXISTS (
+            WITH RECURSIVE chain (id) AS (
+                SELECT NEW.supervisor_id
+                UNION ALL
+                SELECT e.supervisor_id
+                FROM employee e
+                JOIN chain c ON e.employee_id = c.id
+                WHERE e.supervisor_id IS NOT NULL
+            )
+            SELECT 1 FROM chain WHERE id = NEW.employee_id
+        ) THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'This supervisor reports (directly or indirectly) to the employee: that would be a cycle.';
+        END IF;
+    END IF;
+END$$
+
 DELIMITER ;
