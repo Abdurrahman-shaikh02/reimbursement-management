@@ -151,4 +151,45 @@ BEGIN
     CALL check_item_change(OLD.reimbursement_id, NULL);
 END$$
 
+-- -----------------------------------------------------------------------------
+-- T3: disjointness of the claim specialization [S2]. A details row may only be
+-- added to a claim of the matching type, so no claim has two kinds of details.
+-- -----------------------------------------------------------------------------
+CREATE PROCEDURE check_claim_type(IN p_reimbursement_id INT, IN p_expected VARCHAR(10))
+BEGIN
+    DECLARE v_type VARCHAR(10);
+    DECLARE v_msg  VARCHAR(255);
+
+    SELECT claim_type INTO v_type
+    FROM reimbursement
+    WHERE reimbursement_id = p_reimbursement_id;
+
+    IF v_type IS NOT NULL AND v_type <> p_expected THEN
+        SET v_msg = CONCAT('Claim ', p_reimbursement_id, ' is a ', v_type,
+                           ' claim; it cannot have ', p_expected, ' details.');
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_msg;
+    END IF;
+END$$
+
+CREATE TRIGGER trg_travel_bi
+BEFORE INSERT ON travel_reimbursement
+FOR EACH ROW
+BEGIN
+    CALL check_claim_type(NEW.reimbursement_id, 'TRAVEL');
+END$$
+
+CREATE TRIGGER trg_medical_bi
+BEFORE INSERT ON medical_reimbursement
+FOR EACH ROW
+BEGIN
+    CALL check_claim_type(NEW.reimbursement_id, 'MEDICAL');
+END$$
+
+CREATE TRIGGER trg_business_bi
+BEFORE INSERT ON business_reimbursement
+FOR EACH ROW
+BEGIN
+    CALL check_claim_type(NEW.reimbursement_id, 'BUSINESS');
+END$$
+
 DELIMITER ;
