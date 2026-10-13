@@ -355,8 +355,52 @@ def build_schema():
     svg.save(HERE / 'schema_diagram.svg')
 
 
+# ---------------------------------------------------------------------------
+# Claim status diagram
+# ---------------------------------------------------------------------------
+def state(svg, cx, cy, name, sub, final=False, w=230, h=62):
+    x, y = cx - w / 2, cy - h / 2
+    if final:
+        svg.add(f'<rect x="{x - 5}" y="{y - 5}" width="{w + 10}" height="{h + 10}" rx="14" fill="white" stroke="{INK}" stroke-width="1.3"/>')
+    svg.add(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="{HEADER}" stroke="{INK}" stroke-width="1.5"/>')
+    svg.text(cx, cy - 4, name, size=14.5, anchor='middle', weight='bold')
+    svg.text(cx, cy + 15, sub, size=11.5, anchor='middle', color=MUTED)
+
+
+def edge(svg, pts, label_lines, lx, ly, anchor='middle'):
+    svg.line(shorten(pts, 10), width=1.6)
+    arrowhead(svg, pts[-1], pts[-2])
+    for i, t in enumerate(label_lines):
+        svg.text(lx, ly + 16 * i, t, size=12, anchor=anchor, weight='bold' if i == 0 else 'normal',
+                 color=INK if i == 0 else MUTED)
+
+
+def build_status():
+    svg = Svg(1180, 400)
+    svg.text(40, 34, 'Claim status (reimbursement.status) — allowed transitions', size=19, weight='bold')
+    svg.text(40, 56, 'Double border = final state. Any transition not drawn is rejected by trigger T1. '
+             'C-numbers are constraints from the constraint catalogue.', size=12.5, color=MUTED)
+    cy = 170
+    svg.add(f'<circle cx="70" cy="{cy}" r="9" fill="{INK}"/>')
+    edge(svg, [(79, cy), (150, cy)], ['INSERT'], 114, cy - 12)
+    state(svg, 265, cy, 'SUBMITTED', 'approved_by, approval_date NULL')
+    edge(svg, [(380, cy), (590, cy)], ['manager approves'], 485, cy - 34)
+    svg.text(485, cy - 18, 'C10 not own claim · T1 total ≤ limit', size=11.5, anchor='middle', color=MUTED)
+    state(svg, 705, cy, 'APPROVED', 'approved_by, approval_date set')
+    edge(svg, [(820, cy), (1010, cy)], ['marked paid'], 915, cy - 18)
+    state(svg, 1085, cy, 'PAID', 'final', final=True, w=130)
+    edge(svg, [(265, cy + 31), (265, 300)], ['manager rejects', 'C9: remarks required'], 280, 255, anchor='start')
+    state(svg, 265, 336, 'REJECTED', 'final; remarks NOT NULL', final=True)
+    svg.text(430, 336, 'Expense items may be added, changed or deleted only while the claim is SUBMITTED (trigger T2).',
+             size=12.5, color=MUTED)
+    svg.text(430, 356, 'Every move out of SUBMITTED records approved_by and approval_date (CHECK C8).',
+             size=12.5, color=MUTED)
+    svg.save(HERE / 'status_diagram.svg')
+
+
 if __name__ == '__main__':
     build_er()
     build_er(with_key=False)
     build_schema()
-    print('wrote er_diagram.svg, er_diagram_nokey.svg, schema_diagram.svg')
+    build_status()
+    print('wrote er_diagram.svg, er_diagram_nokey.svg, schema_diagram.svg, status_diagram.svg')
