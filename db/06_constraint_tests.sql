@@ -96,6 +96,57 @@ CALL expect_ok('C3', 'Delete an empty department (Legal)',
 CALL expect_error('C4', 'Employee without a department (WORKS_IN is total)',
     "INSERT INTO employee (name, email, password_hash, designation, date_of_joining, dept_id) VALUES ('X', 'x@rms.test', REPEAT('x', 60), 'Intern', '2026-01-01', NULL)");
 
+-- CHECK constraints ---------------------------------------------------------------
+CALL expect_error('C5', 'Status outside the four values',
+    "UPDATE reimbursement SET status = 'CLOSED' WHERE reimbursement_id = 9");
+CALL expect_error('C6', 'Claim of an unknown type',
+    "INSERT INTO reimbursement (applicant_id, claim_type) VALUES (5, 'FOOD')");
+CALL expect_error('C7', 'Expense item with an unknown category',
+    "INSERT INTO expense_item VALUES (9, 3, 'PARTY', 'x', 10, '2026-10-10', NULL)");
+CALL expect_error('C8', 'Approve without recording the approver',
+    "UPDATE reimbursement SET status = 'APPROVED' WHERE reimbursement_id = 9");
+CALL expect_error('C9', 'Reject without remarks',
+    "UPDATE reimbursement SET status = 'REJECTED', approved_by = 2, approval_date = '2026-10-26' WHERE reimbursement_id = 9");
+CALL expect_ok('setup', 'Rahul (a manager) files a claim of his own',
+    "INSERT INTO reimbursement (reimbursement_id, applicant_id, claim_type, claim_date) VALUES (100, 2, 'BUSINESS', '2026-10-25')");
+CALL expect_ok('setup', '... with one item',
+    "INSERT INTO expense_item VALUES (100, 1, 'FOOD', 'Team lunch', 1200, '2026-10-24', NULL)");
+CALL expect_error('C10', 'Rahul approves his own claim',
+    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 2, approval_date = '2026-10-26' WHERE reimbursement_id = 100");
+CALL expect_error('C11', 'Decision dated before the claim',
+    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-01' WHERE reimbursement_id = 100");
+CALL expect_error('C12', 'Expense item with amount 0',
+    "INSERT INTO expense_item VALUES (9, 3, 'FOOD', 'x', 0, '2026-10-10', NULL)");
+CALL expect_error('C12', 'Negative approval limit',
+    "UPDATE manager SET approval_limit = -5 WHERE employee_id = 2");
+CALL expect_error('C13', 'Phone number with letters',
+    "INSERT INTO employee_phone VALUES (10, 'call-me')");
+CALL expect_error('C14', 'Email without a domain',
+    "UPDATE employee SET email = 'karan' WHERE employee_id = 10");
+
+-- T1: workflow --------------------------------------------------------------------
+CALL expect_error('T1', 'Insert a claim that is already APPROVED',
+    "INSERT INTO reimbursement (applicant_id, claim_type, claim_date, status, approved_by, approval_date) VALUES (5, 'TRAVEL', '2026-10-25', 'APPROVED', 1, '2026-10-26')");
+CALL expect_error('T1', 'APPROVED back to SUBMITTED',
+    "UPDATE reimbursement SET status = 'SUBMITTED', approved_by = NULL, approval_date = NULL WHERE reimbursement_id = 5");
+CALL expect_error('T1', 'REJECTED to PAID',
+    "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = 4");
+CALL expect_error('T1', 'SUBMITTED straight to PAID',
+    "UPDATE reimbursement SET status = 'PAID', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 9");
+CALL expect_error('T1', 'Priya (limit 75,000) approves an 85,000 claim',
+    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 3, approval_date = '2026-10-26' WHERE reimbursement_id = 12");
+CALL expect_ok('setup', 'An empty claim (no items yet)',
+    "INSERT INTO reimbursement (reimbursement_id, applicant_id, claim_type, claim_date) VALUES (101, 5, 'TRAVEL', '2026-10-25')");
+CALL expect_error('T1', 'Approve a claim with no items',
+    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 101");
+CALL expect_error('T1', 'Change the applicant of a claim',
+    "UPDATE reimbursement SET applicant_id = 6 WHERE reimbursement_id = 9");
+CALL expect_error('T1', 'Edit the remarks of a decided claim',
+    "UPDATE reimbursement SET remarks = 'changed my mind' WHERE reimbursement_id = 4");
+CALL expect_ok('T1', 'Anita (limit 500,000) approves the 85,000 claim',
+    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 12");
+CALL expect_ok('T1', '... and it is marked paid',
+    "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = 12");
 ROLLBACK;
 
 -- Failed and rolled-back inserts still use up AUTO_INCREMENT values; put them back.
