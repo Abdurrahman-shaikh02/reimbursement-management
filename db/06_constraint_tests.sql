@@ -147,6 +147,33 @@ CALL expect_ok('T1', 'Anita (limit 500,000) approves the 85,000 claim',
     "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 12");
 CALL expect_ok('T1', '... and it is marked paid',
     "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = 12");
+
+-- T2: items frozen after the decision ----------------------------------------------
+CALL expect_error('T2', 'Add an item to a PAID claim',
+    "INSERT INTO expense_item VALUES (1, 4, 'FOOD', 'x', 100, '2026-08-03', NULL)");
+CALL expect_error('T2', 'Change an item amount on an APPROVED claim',
+    "UPDATE expense_item SET amount = 99999 WHERE reimbursement_id = 5 AND item_no = 1");
+CALL expect_error('T2', 'Delete an item from a REJECTED claim',
+    "DELETE FROM expense_item WHERE reimbursement_id = 4 AND item_no = 1");
+CALL expect_error('T2', 'Expense dated after the claim date',
+    "INSERT INTO expense_item VALUES (9, 3, 'FOOD', 'x', 10, '2026-10-20', NULL)");
+CALL expect_ok('T2', 'Add an item to a SUBMITTED claim',
+    "INSERT INTO expense_item VALUES (9, 3, 'FOOD', 'Snacks', 150, '2026-10-11', NULL)");
+
+-- T3: disjoint specialization ----------------------------------------------------------
+CALL expect_error('T3', 'Travel details for a BUSINESS claim',
+    "INSERT INTO travel_reimbursement VALUES (9, 'Pune', 'Goa', 450)");
+CALL expect_error('T3', 'Second details row for a travel claim (primary key)',
+    "INSERT INTO travel_reimbursement VALUES (1, 'Pune', 'Goa', 450)");
+
+-- T4: supervision tree ------------------------------------------------------------------
+CALL expect_error('T4', 'Rahul supervises himself',
+    "UPDATE employee SET supervisor_id = 2 WHERE employee_id = 2");
+CALL expect_error('T4', 'Anita reports to Karan (Karan → team lead → Rahul → Anita: a cycle)',
+    "UPDATE employee SET supervisor_id = 10 WHERE employee_id = 1");
+CALL expect_ok('T4', 'Karan moves to Vikram as supervisor',
+    "UPDATE employee SET supervisor_id = 6 WHERE employee_id = 10");
+
 ROLLBACK;
 
 -- Failed and rolled-back inserts still use up AUTO_INCREMENT values; put them back.
