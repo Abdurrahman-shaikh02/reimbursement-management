@@ -1,11 +1,5 @@
--- =============================================================================
--- Reimbursement Management System — 02_views.sql
--- The derived attribute total_amount ( ) of REIMBURSEMENT [A3].
---
--- total_amount is not stored in any table: storing it would be a second copy of
--- the item amounts and could disagree with them (an update anomaly). The view
--- computes it on demand. A claim with no items shows 0.
--- =============================================================================
+-- The derived attribute total_amount of REIMBURSEMENT, computed from the items
+-- instead of being stored. A claim with no items shows 0.
 USE reimbursement_db;
 
 CREATE OR REPLACE VIEW reimbursement_summary AS

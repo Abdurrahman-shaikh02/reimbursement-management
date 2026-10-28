@@ -123,7 +123,7 @@ export function withWidth(width, fn) {
 }
 
 // headers: string[]; rows: (string | string[])[][]; widths: relative numbers.
-export function table(headers, rows, widths, { total = pageWidth, size = 18, headerFill = HEAD_FILL, firstColFill } = {}) {
+export function table(headers, rows, widths, { total = pageWidth, size = 18, headerFill = HEAD_FILL, firstColFill, align } = {}) {
   const sum = widths.reduce((a, b) => a + b, 0);
   const cols = widths.map((w) => Math.floor((w / sum) * total));
   cols[cols.length - 1] += total - cols.reduce((a, b) => a + b, 0);
@@ -153,6 +153,7 @@ export function table(headers, rows, widths, { total = pageWidth, size = 18, hea
   return [
     new Table({
       width: { size: total, type: WidthType.DXA },
+      alignment: align,
       columnWidths: cols,
       rows: headerRow ? [headerRow, ...bodyRows] : bodyRows,
     }),

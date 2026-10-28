@@ -1,12 +1,7 @@
--- =============================================================================
--- Reimbursement Management System — 06_constraint_tests.sql
--- Tests database keys, foreign keys and CHECK constraints with invalid data.
--- Workflow and hierarchy rules live in the application; run npm test in server/.
--- Prints one row per test: PASS means the database behaved as designed.
--- Everything runs in one transaction that is rolled back: the data is unchanged.
+-- Tests the keys, foreign keys and CHECK constraints with invalid data.
+-- Prints one row per test. Everything is rolled back at the end.
 --
---   mysql -h 127.0.0.1 -P 3307 -u root -p reimbursement_db < db/06_constraint_tests.sql
--- =============================================================================
+--   mysql -h 127.0.0.1 -P 3307 -u root -p reimbursement_db < db/05_constraint_tests.sql
 USE reimbursement_db;
 
 DROP PROCEDURE IF EXISTS expect_error;
@@ -64,7 +59,7 @@ DELIMITER ;
 
 START TRANSACTION;
 
--- Keys --------------------------------------------------------------------------
+-- Keys
 CALL expect_error('C1', 'Duplicate expense item number in one claim',
     "INSERT INTO expense_item VALUES (9, 1, 'FOOD', 'x', 10, '2026-10-10', NULL)");
 CALL expect_error('C2', 'Two employees with the same email',
@@ -74,7 +69,7 @@ CALL expect_error('C2', 'Two departments with the same name',
 CALL expect_error('C2', 'Two applicants with the same bank account',
     "INSERT INTO applicant VALUES (10, '50100234567801')");
 
--- Foreign keys and delete rules ------------------------------------------------
+-- Foreign keys and delete rules
 CALL expect_error('C3', 'Claim by an employee who is not an applicant (Karan)',
     "INSERT INTO reimbursement (applicant_id, claim_type) VALUES (10, 'TRAVEL')");
 CALL expect_error('C3', 'Claim decided by a non-manager (Arjun)',
@@ -92,11 +87,11 @@ CALL expect_error('C3', 'Delete a supervisor who still has subordinates (RESTRIC
 CALL expect_ok('C3', 'Delete an empty department (Legal)',
     "DELETE FROM department WHERE dept_id = 5");
 
--- NOT NULL ----------------------------------------------------------------------
+-- NOT NULL
 CALL expect_error('C4', 'Employee without a department (WORKS_IN is total)',
     "INSERT INTO employee (name, email, password_hash, designation, date_of_joining, dept_id) VALUES ('X', 'x@rms.test', REPEAT('x', 60), 'Intern', '2026-01-01', NULL)");
 
--- CHECK constraints ---------------------------------------------------------------
+-- CHECK constraints
 CALL expect_error('C5', 'Status outside the four values',
     "UPDATE reimbursement SET status = 'CLOSED' WHERE reimbursement_id = 9");
 CALL expect_error('C6', 'Claim of an unknown type',

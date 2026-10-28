@@ -1,4 +1,4 @@
-// Receipt uploads: the file goes to server/uploads, the database stores its path [A7].
+// Receipt uploads: the file goes to server/uploads, the database stores its path.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

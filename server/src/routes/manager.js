@@ -4,7 +4,7 @@ import { query } from '../db.js';
 
 const router = Router();
 
-// Submitted claims this manager may decide: not their own, total within their limit (FR6)
+// Submitted claims this manager may decide: not their own, total within their limit
 router.get('/approvals', async (req, res) => {
   const rows = await query(
     `SELECT s.*, e.name AS applicant_name, d.dept_name
@@ -34,7 +34,7 @@ router.get('/payments', async (req, res) => {
   res.json(rows);
 });
 
-// Reports (FR9). Rejected claims are left out of the money totals.
+// Reports. Rejected claims are left out of the money totals.
 router.get('/reports', async (req, res) => {
   const [byDepartment, byType, byCategory, byMonth, byStatus] = await Promise.all([
     query(

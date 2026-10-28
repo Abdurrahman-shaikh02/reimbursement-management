@@ -10,7 +10,7 @@ export const TITLE = 'Reimbursement Management System — Database Design';
 const FOOT = 'RMS — Database Design';
 const png = (name) => new URL(`../er/${name}.png`, import.meta.url).pathname;
 
-const TEAM = [
+export const TEAM = [
   ['612415001', 'Abdurrahman Shaikh'],
   ['612415057', 'Dhruv Agarwal'],
   ['612415044', 'Mrudula Dagale'],
@@ -67,7 +67,7 @@ const ATTRIBUTE_DECISIONS = [
   ['A3', 'total_amount is derived, not stored', [
     ['Decision', 'total_amount ( ) is a derived attribute of REIMBURSEMENT: the sum of its expense item amounts. It is computed by the view reimbursement_summary and not stored in any table.'],
     ['Why', 'Storing it would create a second copy of the same fact. When an item is added or changed, the stored total could disagree with the items: an update anomaly (§7.1). Computing it is cheap, because a claim has only a few items.'],
-    ['Alternative rejected', 'A stored total kept up to date by triggers. It is faster to read, but it is redundant and one more thing that can go wrong.'],
+    ['Alternative rejected', 'A stored total kept up to date on every item change. It is faster to read, but it is redundant and one more thing that can go wrong.'],
     ['Textbook', '§6.3 (derived attributes are not stored), §4.2 (views)'],
   ]],
   ['A4', 'password_hash on EMPLOYEE (approved change 7)', [
@@ -82,7 +82,7 @@ const ATTRIBUTE_DECISIONS = [
   ['A6', 'claim_type on REIMBURSEMENT (approved change 2)', [
     ['Decision', 'claim_type ∈ {TRAVEL, MEDICAL, BUSINESS} is an attribute of REIMBURSEMENT. The claim specialization (S2) is defined on its value.'],
     ['Why', ['Without it, the type of a claim can only be found by probing three tables. With it, a single row says which subclass table must hold the claim\'s details.',
-      'It makes disjointness checkable: trigger T3 refuses a TRAVEL row for a claim whose claim_type is MEDICAL.',
+      'It makes disjointness checkable: the application (rule T3) writes the details row only to the table that matches claim_type, so a MEDICAL claim never gets a TRAVEL row.',
       'It is a fact about the claim, determined by reimbursement_id alone, so it causes no normalization problem (Section 10).']],
   ]],
   ['A7', 'Receipt stored as a file path (approved change 5)', [
@@ -103,7 +103,7 @@ const ATTRIBUTE_DECISIONS = [
     ['Note', 'APPROVES records the decision whether the manager approves or rejects; status says which. approval_date is therefore "the date of the decision".'],
   ]],
   ['A10', 'approval_limit belongs to the individual MANAGER', [
-    ['Decision', 'Each manager has an approval_limit. A manager may approve a claim only if its total is within that limit (trigger T1).'],
+    ['Decision', 'Each manager has an approval_limit. A manager may approve a claim only if its total is within that limit (rule T1, checked by the application).'],
     ['Why', 'Limits are given to people, not to designations: two "Team Lead"s can have different limits. So we do not assert designation → approval_limit, and the limit is stored per manager.'],
   ]],
   ['A11', 'bank_account_no belongs to APPLICANT only', [
@@ -128,7 +128,7 @@ const RELATIONSHIP_DECISIONS = [
     ['Mapping', 'One supervisor, many subordinates: the arrow points at the supervisor role. Role labels "supervisor" and "subordinate" are needed because both ends are EMPLOYEE (§6.2.2).'],
     ['Participation', 'Both partial. Subordinate side 0..1: the head of the company has no supervisor. Supervisor side 0..*: most employees supervise nobody.'],
     ['Why on EMPLOYEE', 'Reporting lines exist for everyone, not only managers. A team lead may supervise people without having any approval authority.'],
-    ['Result', 'employee.supervisor_id NULL, foreign key to employee. A self-reference and longer cycles are refused by trigger T4.'],
+    ['Result', 'employee.supervisor_id NULL, foreign key to employee. A self-reference and longer cycles are refused by the application (rule T4).'],
   ]],
   ['R3', 'SUBMITS: APPLICANT one-to-many REIMBURSEMENT', [
     ['Mapping', 'Each claim is submitted by exactly one applicant; an applicant submits any number of claims. Arrow points at APPLICANT.'],
@@ -150,7 +150,7 @@ const RELATIONSHIP_DECISIONS = [
     ['Decision', 'SUPERVISES and APPROVES stay independent, as in the original diagram. Any manager other than the applicant may decide a claim, within their limit.'],
     ['Why', ['The applicant\'s supervisor may not have a high enough limit for a large claim; another manager must then be able to decide it.',
       'A reporting line and an approval authority are different facts, so they are different relationships.']],
-    ['Note', 'The plan marked this question as settled but did not record the answer. This is our assumption; see Q1. If the team wants "supervisor only", it is one extra check in trigger T1, with no change to the tables.'],
+    ['Note', 'The plan marked this question as settled but did not record the answer. This is our assumption; see Q1. If the team wants "supervisor only", it is one extra check in rule T1, with no change to the tables.'],
   ]],
   ['R7', 'All relationships are binary', [
     ['Decision', 'No ternary relationships. The one place where three entity sets meet (manager, applicant, claim) is modelled with aggregation (G1).'],
@@ -168,7 +168,7 @@ const STRUCTURE_DECISIONS = [
   ['S2', 'REIMBURSEMENT → {TRAVEL, MEDICAL, BUSINESS}: disjoint and total (approved change 2)', [
     ['Disjoint', 'One shared hollow arrow. A claim has exactly one purpose; a business trip with a medical visit is filed as two claims.'],
     ['Total', 'The keyword "total". Every claim is one of the three types; "untyped" claims do not exist.'],
-    ['Enforcement', 'claim_type (A6) states the type. Disjointness: trigger T3. Totality: the claim row, its subclass row and its items are inserted in one transaction (A1 in Section 11). MySQL has no assertions or deferred constraints, so the database alone cannot require a subclass row (§4.4.7, §4.4.8).'],
+    ['Enforcement', 'claim_type (A6) states the type. Disjointness: rule T3, checked by the application. Totality: the claim row, its subclass row and its items are inserted in one transaction (A1 in Section 11). MySQL has no assertions or deferred constraints, so the database alone cannot require a subclass row (§4.4.7, §4.4.8).'],
   ]],
   ['S3', 'Both specializations are reduced with the textbook\'s method 1', [
     ['Decision', 'One table for the superclass, and one per subclass holding the subclass attributes plus the superclass key, which is both primary key and foreign key (§6.8.6.1, method 1).'],
@@ -198,7 +198,7 @@ const MAPPING_DECISIONS = [
     ['Decision', 'reimbursement gets approved_by, approval_date and remarks, all nullable.'],
     ['Alternative', 'A separate table approval (reimbursement_id PK and FK, manager_id, approval_date, remarks). It has no NULLs, because a row exists only when a decision exists.'],
     ['Why we fold', ['The rules that link the decision to the claim then become single-row CHECK constraints: "SUBMITTED ⇔ no approver" (C8), "REJECTED ⇒ remarks" (C9), "approver ≠ applicant" (C10), "approval_date ≥ claim_date" (C11).',
-      'With a separate table, every one of these crosses two tables and needs a trigger. Folding also saves a join on every claim screen.']],
+      'With a separate table, every one of these crosses two tables and could no longer be a CHECK. Folding also saves a join on every claim screen.']],
     ['Cost', 'Three nullable columns that are NULL while a claim is pending. The textbook accepts this for partial participation (§6.7.6).'],
   ]],
   ['M3', 'No tables for CONTAINS or for the aggregation', [
@@ -211,14 +211,17 @@ const MAPPING_DECISIONS = [
 ];
 
 const CONSTRAINT_DECISIONS = [
-  ['K1', 'CHECK for rules on one row, triggers for rules across rows or tables', [
-    ['Decision', 'Single-row rules are CHECK constraints (C5 to C14). Rules that need another row or another table are BEFORE triggers (T1 to T4).'],
-    ['Why', 'A CHECK is declarative and cannot be bypassed. Standard SQL allows subqueries in CHECK, but MySQL does not, and it has no assertions (§4.4.8). Triggers are the textbook\'s answer for such rules (§5.3.1).'],
+  ['K1', 'CHECK for rules on one row; the application checks rules across rows or tables', [
+    ['Decision', 'Single-row rules are CHECK constraints (C5 to C14). Rules that need the old row, another row or another table (T1 to T4) are checked by the application, twice: in the browser form, so the user sees the problem before submitting, and again in the API, inside the transaction that writes the data. Both use the same code (shared/validation.mjs). The database has no triggers.'],
+    ['Why', ['A CHECK is declarative and cannot be bypassed, so every rule that fits in one row is a CHECK. Standard SQL allows subqueries in CHECK, but MySQL does not, and it has no assertions (§4.4.8), so T1 to T4 cannot be declared in the schema.',
+      'The database-side alternative is triggers (§5.3). They were not part of our course, so we keep these rules in application code that we wrote and can explain. One shared module means the form and the API can never disagree about a rule.']],
+    ['Concurrency', 'The API reads the rows a rule depends on with SELECT … FOR UPDATE inside the transaction (§4.3, §18.8.3). Two managers deciding the same claim at the same moment therefore cannot both succeed, and two supervisor changes cannot together create a cycle.'],
+    ['Cost', 'Only the application enforces T1 to T4. A statement typed directly into MySQL could break them, so data is changed only through the application; the application\'s database user (03_app_user.sql) has no rights to change the schema.'],
     ['Requirement', 'MySQL 8.0.16 or later: earlier versions parse CHECK constraints but ignore them.'],
   ]],
   ['K2', 'Two totality rules are enforced by one transaction', [
     ['Decision', 'The application inserts a claim, its subclass row and its items in a single transaction (rule A1 in Section 11).'],
-    ['Why', 'A rule such as "every claim has at least one item" can only be checked after all rows are inserted. That needs a deferred constraint or an assertion (§4.4.7), and MySQL has neither. Trigger T1 is the safety net: a claim with no items can never be approved.'],
+    ['Why', 'A rule such as "every claim has at least one item" can only be checked after all rows are inserted. That needs a deferred constraint or an assertion (§4.4.7), and MySQL has neither. Rule T1 is the safety net: the application never approves a claim with no items.'],
   ]],
   ['K3', 'Delete behaviour follows the meaning of each reference', [
     ['Decision', 'CASCADE only where the child is part of the parent: phones, role rows, claim subclass rows and expense items. RESTRICT everywhere else.'],
@@ -268,7 +271,7 @@ const COLUMNS = {
     ['designation', 'VARCHAR(50)', 'no', ''],
     ['date_of_joining', 'DATE', 'no', ''],
     ['dept_id', 'INT', 'no', 'FK → department, RESTRICT (WORKS_IN, total)'],
-    ['supervisor_id', 'INT', 'yes', 'FK → employee, RESTRICT (SUPERVISES, partial); T4'],
+    ['supervisor_id', 'INT', 'yes', 'FK → employee, RESTRICT (SUPERVISES, partial); T4 (application)'],
   ],
   employee_phone: [
     ['employee_id', 'INT', 'no', 'PK part; FK → employee, CASCADE'],
@@ -287,7 +290,7 @@ const COLUMNS = {
     ['applicant_id', 'INT', 'no', 'FK → applicant, RESTRICT (SUBMITS, total)'],
     ['claim_type', 'VARCHAR(10)', 'no', 'C6'],
     ['claim_date', 'DATE', 'no', 'default: today'],
-    ['status', 'VARCHAR(10)', 'no', 'C5; default SUBMITTED; T1'],
+    ['status', 'VARCHAR(10)', 'no', 'C5; default SUBMITTED; T1 (application)'],
     ['approved_by', 'INT', 'yes', 'FK → manager, RESTRICT (APPROVES); C8, C10'],
     ['approval_date', 'DATE', 'yes', 'C8, C11'],
     ['remarks', 'VARCHAR(255)', 'yes', 'C9'],
@@ -314,7 +317,7 @@ const COLUMNS = {
     ['category', 'VARCHAR(20)', 'no', 'C7'],
     ['description', 'VARCHAR(200)', 'no', ''],
     ['amount', 'DECIMAL(10,2)', 'no', 'C12: > 0'],
-    ['expense_date', 'DATE', 'no', 'T2: not after claim_date'],
+    ['expense_date', 'DATE', 'no', 'T2 (application): not after claim_date'],
     ['receipt_path', 'VARCHAR(255)', 'yes', 'path of the uploaded file (A7)'],
   ],
 };
@@ -357,10 +360,10 @@ const CONSTRAINTS = [
   ['C12', 'amount > 0, approval_limit > 0, distance_km > 0', 'CHECK', 'Zero or negative values are meaningless.'],
   ['C13', 'employee_phone.phone matches + and digits, 7 to 15 characters', 'CHECK', 'Basic format check.'],
   ['C14', 'email matches the pattern name@domain.tld', 'CHECK', 'Basic format check; the login depends on it.'],
-  ['T1', 'reimbursement BEFORE INSERT, UPDATE: (a) a new claim starts as SUBMITTED, and only the moves in the status diagram are allowed; (b) applicant_id, claim_type and claim_date never change, and a decision, once made, is never edited; (c) on approval the claim has at least one item and SUM(amount) ≤ the approver\'s approval_limit', 'Trigger', 'Needs the old row (a, b) or other tables (c), so a CHECK cannot do it. Without the INSERT check a claim could be inserted already APPROVED and skip (c).'],
-  ['T2', 'expense_item BEFORE INSERT, UPDATE, DELETE: the claim must still be SUBMITTED, and expense_date ≤ claim_date', 'Trigger', 'Items are frozen once a manager has decided; otherwise the approved total could change afterwards.'],
-  ['T3', 'travel_ / medical_ / business_reimbursement BEFORE INSERT: the parent\'s claim_type matches the table', 'Trigger', 'Disjointness of the claim specialization (S2).'],
-  ['T4', 'employee BEFORE INSERT, UPDATE: supervisor_id is not the employee and not one of their subordinates, at any depth', 'Trigger', 'No supervision cycles. MySQL does not allow an AUTO_INCREMENT column in a CHECK, so even the self-reference needs the trigger.'],
+  ['T1', 'Claim workflow: (a) a new claim is always inserted as SUBMITTED, and only the moves in the status diagram are allowed; (b) applicant_id, claim_type and claim_date never change, and a decision, once made, is never edited; (c) on approval the claim has at least one item and SUM(amount) ≤ the approver\'s approval_limit', 'Application (form + API)', 'Needs the old row (a, b) or other tables (c), so a CHECK cannot do it. The API locks the claim and the manager row (FOR UPDATE) while it checks and saves the decision. There is no endpoint that edits a saved claim.'],
+  ['T2', 'Expense items: expense_date ≤ claim_date, and items cannot change once saved', 'Application (form + API)', 'claim_date is in another table. The API offers no way to edit or delete a saved item, so the total a manager approved cannot change afterwards.'],
+  ['T3', 'The details row goes into the table that matches claim_type', 'Application (API)', 'Disjointness of the claim specialization (S2). The claim and its one details row are inserted in the same transaction (A1).'],
+  ['T4', 'supervisor_id is not the employee and not one of their subordinates, at any depth', 'Application (form + API)', 'No supervision cycles: needs a walk up the reporting tree. The form disables supervisors that would create a cycle; the API locks the employee rows and checks again.'],
   ['A1', 'A claim, its subclass row and at least one item are inserted in one transaction', 'Application', 'Totality of S2 and of CONTAINS (K2).'],
   ['A2', 'claim_date is set by the server, never taken from the form', 'Application', 'MySQL does not allow CURRENT_DATE inside a CHECK.'],
   ['A3', 'Passwords are stored only as bcrypt hashes', 'Application', 'A4.'],
@@ -370,7 +373,7 @@ const DELETE_RULES = [
   ['employee_phone.employee_id', 'employee', 'CASCADE', 'A phone number is part of the employee.'],
   ['applicant.employee_id, manager.employee_id', 'employee', 'CASCADE', 'A subclass row is the same entity as its superclass row (§6.8.4: delete from all lower-level sets).'],
   ['employee.dept_id', 'department', 'RESTRICT', 'Move the employees before deleting their department.'],
-  ['employee.supervisor_id', 'employee', 'RESTRICT', 'Reassign subordinates first. T4 reads this column, and keeping it RESTRICT avoids silent changes to the reporting tree.'],
+  ['employee.supervisor_id', 'employee', 'RESTRICT', 'Reassign subordinates first. T4 checks this column, and keeping it RESTRICT avoids silent changes to the reporting tree.'],
   ['reimbursement.applicant_id', 'applicant', 'RESTRICT', 'Claims are financial records and are kept. In effect, an employee with claims cannot be deleted.'],
   ['reimbursement.approved_by', 'manager', 'RESTRICT', 'The record of who decided must survive. Also required: the column is used in CHECK C10.'],
   ['travel_/medical_/business_reimbursement.reimbursement_id', 'reimbursement', 'CASCADE', 'Subclass row is part of the claim.'],
@@ -391,10 +394,10 @@ export default function build(doc, tocHeadings) {
     p('Reimbursement Management System', { size: 48, bold: true, color: '1F3A68', align: AlignmentType.CENTER, after: 200 }),
     p('Database design and the justification of every design decision', { size: 28, align: AlignmentType.CENTER, after: 600 }),
     p('DBMS Laboratory — group project', { size: 22, align: AlignmentType.CENTER, after: 120 }),
-    p('Version 2 · 27 October 2026', { size: 22, align: AlignmentType.CENTER, after: 800, color: '555555' }),
+    p('Version 3 · 28 October 2026', { size: 22, align: AlignmentType.CENTER, after: 800, color: '555555' }),
     ...withWidth(PORTRAIT_WIDTH * 0.6, () => table(['MIS number', 'Name'], TEAM, [40, 60], { total: Math.round(PORTRAIT_WIDTH * 0.6), size: 20 })),
     p('', { after: 600 }),
-    p('Scope: this document covers the database (ER diagram, relational schemas, functional dependencies, normalization and integrity constraints). The SQL scripts in db/ implement it; their comments carry the same decision IDs.', { size: 19, italic: true, align: AlignmentType.CENTER, color: '555555' }),
+    p('Scope: this document covers the database (ER diagram, relational schemas, functional dependencies, normalization and integrity constraints). The SQL scripts in db/ implement it.', { size: 19, italic: true, align: AlignmentType.CENTER, color: '555555' }),
     pageBreak(),
   ];
 
@@ -415,7 +418,7 @@ export default function build(doc, tocHeadings) {
       ['M', 'Reduction of the ER diagram to tables', '7'],
       ['N', 'Functional dependencies we deliberately do not assert', '9.1'],
       ['K', 'Constraint strategy', '11'],
-      ['C, T, A', 'Individual constraints: CHECK and keys, triggers, application rules', '11.1'],
+      ['C, T, A', 'Individual constraints: keys and CHECK, cross-table rules checked by the application, other application rules', '11.1'],
       ['Q', 'Open questions for the team', '12'],
     ], [14, 66, 20]),
     p('Each decision is a small table: what we decided, why, the alternative we rejected and what it costs. Textbook references (§) are to Silberschatz, Korth & Sudarshan, ~Database System Concepts~, 7th edition.'),
@@ -433,7 +436,7 @@ export default function build(doc, tocHeadings) {
     numbered([
       'Store employees, departments, reporting lines and roles (applicant, manager) without redundancy.',
       'Record each claim with its type-specific details and its individual bills, with receipts.',
-      'Enforce the approval rules in the database itself, so that no application bug can break them: no self-approval, approval within the manager\'s limit, a reason for every rejection, only valid status changes.',
+      'Enforce the approval rules: no self-approval and a reason for every rejection as CHECK constraints in the database; approval within the manager\'s limit and only valid status changes in the application, checked in the form and again in the API.',
       'Keep every table in at least 3NF (in fact BCNF), so that there are no update, insertion or deletion anomalies.',
       'Support reports such as totals by department, type, category and month.',
       'Document every design decision with its justification and the alternatives considered.',
@@ -628,7 +631,7 @@ F8  rid, item_no  → category, description, amount, expense_date, receipt_path`
 
   const constraints = [
     H1('11  Integrity constraints'),
-    p('Every rule the data must obey, where it is enforced and why. C = declared in the table (key, NOT NULL or CHECK), T = trigger, A = application rule that the database cannot express.'),
+    p('Every rule the data must obey, where it is enforced and why. C = declared in the table (key, NOT NULL or CHECK). T = a rule that needs the old row, another row or another table, so it cannot be a CHECK in MySQL; the application checks it in the form and again in the API (K1). A = other application rules.'),
     H2('11.1  Constraint catalogue'),
     table(['ID', 'Rule', 'Mechanism', 'Reason'], CONSTRAINTS, [6, 50, 13, 31], { size: 16 }),
     H2('11.2  What happens on delete'),
@@ -636,7 +639,7 @@ F8  rid, item_no  → category, description, amount, expense_date, receipt_path`
     p('ON UPDATE is the default (RESTRICT) everywhere: primary keys are surrogates and never change (A1).'),
     H2('11.3  Claim status workflow'),
     image(png('status_diagram'), PORTRAIT_WIDTH),
-    caption('Figure 3. Allowed status changes. Trigger T1 rejects every other change, for example APPROVED → SUBMITTED or REJECTED → PAID.'),
+    caption('Figure 3. Allowed status changes. The application (rule T1) refuses every other change, for example APPROVED → SUBMITTED or REJECTED → PAID.'),
     H2('11.4  Constraint decisions'),
     ...decisions(CONSTRAINT_DECISIONS),
   ];
@@ -649,14 +652,14 @@ F8  rid, item_no  → category, description, amount, expense_date, receipt_path`
       ['Q2', 'Do we record who marked a claim paid, and the payment date or reference?', 'No; only status = PAID (E4)', 'Add ADMIN subclass and PAYS relationship (paid_by, payment_date, payment_ref)'],
       ['Q3', 'What happens to a claim larger than every manager\'s limit? Two-level approval?', 'It stays SUBMITTED until a manager with a high enough limit decides it', 'Many-to-many APPROVES with a separate approval table'],
       ['Q4', 'Store the IFSC code with the bank account?', 'No; account number only, as in the plan (A11)', 'Add ifsc_code; candidate key becomes (ifsc_code, bank_account_no)'],
-      ['Q5', 'May an applicant withdraw (delete) a claim while it is still SUBMITTED?', 'No; claims are never deleted by the app', 'A BEFORE DELETE trigger allowing it only in SUBMITTED'],
+      ['Q5', 'May an applicant withdraw (delete) a claim while it is still SUBMITTED?', 'No; claims are never deleted by the app', 'A delete endpoint that allows it only while SUBMITTED'],
       ['Q6', 'Is a receipt mandatory for every expense item?', 'No; receipt_path may be NULL (A7)', 'Make receipt_path NOT NULL'],
     ], [6, 34, 30, 30], { size: 17 }),
   ];
 
   const appendixA = [
     H1('Appendix A  Assignment checklist'),
-    p('The assignment (references/DBMS Project.docx) asks for a report with seven items. All seven are covered here; File 1 (code and screenshots) follows after approval.'),
+    p('The assignment (references/DBMS Project.docx) asks for a report with seven items. All seven are covered here. File 1 holds the source code and the screenshots of the forms.'),
     table(['Required in the report', 'Where', 'Status'], [
       ['1. Problem statement', 'Section 2', 'Done'],
       ['2. Objectives', 'Section 3', 'Done'],
@@ -665,7 +668,7 @@ F8  rid, item_no  → category, description, amount, expense_date, receipt_path`
       ['5. Relational schemas obtained from the ER diagram', 'Sections 7 and 8, Figure 2', 'Done'],
       ['6. Functional dependencies that must hold on each table', 'Section 9', 'Done'],
       ['7. Each table normalized up to 3NF', 'Section 10 (all tables are in BCNF)', 'Done'],
-      ['File 1: source code and form screenshots', 'db/, server/, client/; screenshots in report/screenshots/', 'Done'],
+      ['File 1: source code and form screenshots', 'db/, server/, client/, shared/; 15 screenshots in report/screenshots/', 'Done'],
     ], [45, 40, 15]),
   ];
 
@@ -677,13 +680,14 @@ F8  rid, item_no  → category, description, amount, expense_date, receipt_path`
       ['Is a binary MANAGER–REIMBURSEMENT relationship not the same?', 'In tables, yes: identical. We keep the aggregation because the decision is about a submission (who claims what); the self-approval rule compares the approver with the submitter (G1).'],
       ['Why is EXPENSE_ITEM weak?', 'It cannot be identified without its claim: item_no restarts at 1 in every claim. Its key is (reimbursement_id, item_no), and deleting a claim deletes its items (W1).'],
       ['Why is the EMPLOYEE specialization overlapping but the claim one disjoint?', 'A manager can also file claims, so roles combine. A claim has exactly one purpose and one set of type details (S1, S2).'],
-      ['How is "disjoint and total" enforced?', 'Disjoint: claim_type plus trigger T3. Total: one transaction inserts the claim and its subclass row; MySQL has no assertions or deferred constraints to do it in the schema (S2, K2).'],
+      ['How is "disjoint and total" enforced?', 'Disjoint: claim_type, and the application writes only the matching details row (T3). Total: one transaction inserts the claim and its subclass row; MySQL has no assertions or deferred constraints to do it in the schema (S2, K2).'],
       ['Why method 1 for the claim ISA, when method 2 is allowed for disjoint and total?', 'With method 2, expense_item and approved_by would have no single table to reference (S3).'],
       ['Where is the transitive dependency?', 'In the original design: employee → department → location. Making DEPARTMENT an entity set removes it (E1, Section 10.3).'],
       ['Does (travel_from, travel_to) → distance_km hold?', 'No: distance is a fact of the trip, not of the city pair. If it held, travel_reimbursement would not be in 3NF and we would split off route (N1).'],
       ['Why not store total_amount?', 'It is derived; storing it creates an update anomaly. The view computes it (A3).'],
       ['Why surrogate keys?', 'Natural keys (email, name) can change, and primary keys must not. The natural keys are still UNIQUE (A1).'],
-      ['Which rules could not be CHECK constraints, and why?', 'Status transitions (needs the old row), the approval limit (needs another table), frozen items and type matching (other tables), and supervision cycles (recursive). Those are T1 to T4 (K1).'],
+      ['Which rules could not be CHECK constraints, and why?', 'Status transitions (needs the old row), the approval limit (needs another table), frozen items and type matching (other tables), and supervision cycles (recursive). Those are T1 to T4. MySQL allows no subqueries in CHECK and has no assertions, so the application checks them, in the form and again in the API inside a locked transaction (K1).'],
+      ['Why no triggers?', 'Triggers were not part of our course. The cross-table rules (T1 to T4) are checked by one shared validation module, used by both the form and the API. The API checks again inside the transaction with SELECT … FOR UPDATE, so concurrent requests cannot slip past a rule (K1).'],
       ['Is the decomposition lossless?', 'Yes. At every split the common attributes are a key of one side (§7.2.3). It also preserves dependencies (Section 10.4).'],
     ].flatMap(([q, a]) => [p(`**${q}**`, { after: 40, keepNext: true }), p(a, { after: 160 })]),
   ];

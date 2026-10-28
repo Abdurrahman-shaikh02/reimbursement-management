@@ -1,6 +1,8 @@
-// Builds report/RMS_Database_Design.{docx,pdf}.
+// Builds report/RMS_Database_Design.{docx,pdf} (the design rationale), or with
+// "submission" the short report for upload, report/submission/File2_<MIS>_Report.{docx,pdf}.
 //
 //   cd report/src && npm install && npm run build
+//   npm run build:submission
 //
 // Needs LibreOffice (soffice) and poppler (pdftotext). The document is built
 // more than once: the first PDF tells us on which page every heading landed,
@@ -12,12 +14,16 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Document, Packer } from 'docx';
 import { Doc, documentStyles, numberingConfig } from './lib.js';
-import design, { TITLE } from './design.js';
+import * as designDoc from './design.js';
+import * as submissionDoc from './submission.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.resolve(HERE, '..');
+const SUBMISSION = process.argv[2] === 'submission';
+const { default: design, TITLE } = SUBMISSION ? submissionDoc : designDoc;
+const OUT = path.resolve(HERE, SUBMISSION ? '../submission' : '..');
+fs.mkdirSync(OUT, { recursive: true });
 const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-soffice-'));
-const NAME = 'RMS_Database_Design';
+const NAME = SUBMISSION ? `File2_${submissionDoc.MIS}_Report` : 'RMS_Database_Design';
 
 async function writeDocx(pages, tocHeadings, file) {
   const doc = new Doc(TITLE, pages);

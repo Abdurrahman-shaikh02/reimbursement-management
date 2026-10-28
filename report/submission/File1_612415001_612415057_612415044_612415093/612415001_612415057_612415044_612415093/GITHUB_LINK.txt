@@ -1,0 +1,5 @@
+Reimbursement Management System - DBMS Laboratory project
+GitHub: https://github.com/Abdurrahman-shaikh02/reimbursement-management
+
+This folder holds the source code (db/, server/, client/, shared/) and the
+screenshots of the forms (screenshots/). See README.md for how to run it.

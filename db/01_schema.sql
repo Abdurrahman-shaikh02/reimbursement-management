@@ -1,164 +1,105 @@
--- =============================================================================
--- Reimbursement Management System — 01_schema.sql
--- Creates the database and its 10 tables.
---
--- Every design choice here is explained in report/RMS_Database_Design.pdf.
--- Tags in square brackets point to it:
---   E/A/R/S/G/W/M/K = design decisions (Section 6, 7, 11.4)
---   C1–C14          = constraints declared in the tables (Section 11.1)
---   T1-T4           = application validations (shared/validation.mjs and API routes)
---
--- Needs MySQL 8.0.16 or later: older versions parse CHECK constraints but ignore them [K1].
--- =============================================================================
+-- Creates the database and its 10 tables. Needs MySQL 8.0.16+ (enforces CHECK).
 
 DROP DATABASE IF EXISTS reimbursement_db;
 CREATE DATABASE reimbursement_db CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 USE reimbursement_db;
 
--- -----------------------------------------------------------------------------
--- department: entity set DEPARTMENT [E1]
--- FDs: dept_id → dept_name, location ; dept_name → dept_id      (BCNF)
--- -----------------------------------------------------------------------------
 CREATE TABLE department (
-    dept_id     INT          NOT NULL AUTO_INCREMENT,   -- surrogate key [A1]
+    dept_id     INT          NOT NULL AUTO_INCREMENT,
     dept_name   VARCHAR(60)  NOT NULL,
     location    VARCHAR(60)  NOT NULL,
     CONSTRAINT pk_department      PRIMARY KEY (dept_id),
-    CONSTRAINT uq_department_name UNIQUE (dept_name)    -- candidate key [C2]
+    CONSTRAINT uq_department_name UNIQUE (dept_name)
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- employee: entity set EMPLOYEE (superclass of APPLICANT and MANAGER) [E2]
---   WORKS_IN   (many-to-one, EMPLOYEE total)  folded in as dept_id NOT NULL      [R1][M1]
---   SUPERVISES (recursive one-to-many, partial) folded in as supervisor_id NULL [R2][M1]
--- FDs: employee_id → all other columns ; email → employee_id            (BCNF)
--- -----------------------------------------------------------------------------
+-- WORKS_IN is folded in as dept_id, SUPERVISES as supervisor_id
 CREATE TABLE employee (
-    employee_id      INT           NOT NULL AUTO_INCREMENT,  -- surrogate key [A1]
-    name             VARCHAR(80)   NOT NULL,                 -- atomic, not split [A12]
-    email            VARCHAR(100)  NOT NULL,                 -- login name
-    password_hash    CHAR(60)      NOT NULL,                 -- bcrypt hash only, never the password [A4]
+    employee_id      INT           NOT NULL AUTO_INCREMENT,
+    name             VARCHAR(80)   NOT NULL,
+    email            VARCHAR(100)  NOT NULL,
+    password_hash    CHAR(60)      NOT NULL,                 -- bcrypt hash
     designation      VARCHAR(50)   NOT NULL,
     date_of_joining  DATE          NOT NULL,
-    dept_id          INT           NOT NULL,                 -- NOT NULL = total participation in WORKS_IN [C4]
-    supervisor_id    INT           NULL,                     -- NULL = top of the hierarchy (partial)
+    dept_id          INT           NOT NULL,
+    supervisor_id    INT           NULL,                     -- NULL = top of the hierarchy
     CONSTRAINT pk_employee       PRIMARY KEY (employee_id),
-    CONSTRAINT uq_employee_email UNIQUE (email),             -- candidate key [C2]
-    -- No ON DELETE action = RESTRICT: move people before deleting their department [K3]
+    CONSTRAINT uq_employee_email UNIQUE (email),
     CONSTRAINT fk_employee_dept FOREIGN KEY (dept_id)
         REFERENCES department (dept_id),
-    -- RESTRICT: reassign subordinates before deleting their supervisor [K3]
     CONSTRAINT fk_employee_supervisor FOREIGN KEY (supervisor_id)
         REFERENCES employee (employee_id),
-    CONSTRAINT chk_employee_email CHECK (email LIKE '%_@_%._%')   -- [C14]
-    -- "Not your own supervisor, no cycles" cannot be a CHECK: MySQL forbids
-    -- AUTO_INCREMENT columns in CHECK. The application validates the supervision tree.
+    CONSTRAINT chk_employee_email CHECK (email LIKE '%_@_%._%')
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- employee_phone: multivalued attribute { phone } of EMPLOYEE [A2][§6.7.2]
--- All-key relation: no non-trivial FDs, so BCNF (and 4NF).
--- -----------------------------------------------------------------------------
+-- Multivalued attribute phone of EMPLOYEE
 CREATE TABLE employee_phone (
     employee_id  INT          NOT NULL,
     phone        VARCHAR(15)  NOT NULL,                      -- text: keeps "+91" and leading zeros
     CONSTRAINT pk_employee_phone PRIMARY KEY (employee_id, phone),
-    -- CASCADE: a phone number is part of its employee [K3]
     CONSTRAINT fk_phone_employee FOREIGN KEY (employee_id)
         REFERENCES employee (employee_id) ON DELETE CASCADE,
-    CONSTRAINT chk_phone_format CHECK (                        -- [C13]
+    CONSTRAINT chk_phone_format CHECK (
         CHAR_LENGTH(phone) BETWEEN 7 AND 15 AND REGEXP_LIKE(phone, '^[+]?[0-9]+$'))
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- applicant, manager: subclasses of EMPLOYEE, overlapping and partial [S1].
--- Reduced with the textbook's method 1 [S3]: the superclass key is both the
--- primary key and a foreign key. An employee may be in both tables, or neither.
--- -----------------------------------------------------------------------------
+-- Subclasses of EMPLOYEE (overlapping, partial)
 CREATE TABLE applicant (
     employee_id      INT          NOT NULL,
-    bank_account_no  VARCHAR(18)  NOT NULL,                  -- digits stored as text [A11]
+    bank_account_no  VARCHAR(18)  NOT NULL,
     CONSTRAINT pk_applicant      PRIMARY KEY (employee_id),
-    CONSTRAINT uq_applicant_bank UNIQUE (bank_account_no),   -- second candidate key; no shared payout accounts [C2]
-    -- CASCADE: the subclass row is the same entity as the employee row [K3][§6.8.4]
+    CONSTRAINT uq_applicant_bank UNIQUE (bank_account_no),
     CONSTRAINT fk_applicant_employee FOREIGN KEY (employee_id)
         REFERENCES employee (employee_id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
 CREATE TABLE manager (
     employee_id     INT            NOT NULL,
-    approval_limit  DECIMAL(12,2)  NOT NULL,                 -- per manager, not per designation [A10]; DECIMAL for money [K5]
+    approval_limit  DECIMAL(12,2)  NOT NULL,
     CONSTRAINT pk_manager PRIMARY KEY (employee_id),
     CONSTRAINT fk_manager_employee FOREIGN KEY (employee_id)
         REFERENCES employee (employee_id) ON DELETE CASCADE,
-    CONSTRAINT chk_manager_limit CHECK (approval_limit > 0)  -- [C12]
+    CONSTRAINT chk_manager_limit CHECK (approval_limit > 0)
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- reimbursement: entity set REIMBURSEMENT (the claim header) [E3]
---   SUBMITS  (APPLICANT 1 : N, REIMBURSEMENT total) folded in as applicant_id NOT NULL [R3][M1]
---   APPROVES (MANAGER 1 : N CLAIM_PROCESS, both partial) folded in as
---            approved_by, approval_date, remarks, all NULL while pending [R4][M2]
---   CLAIM_PROCESS (the aggregation) needs no table: it uses this one [G1][M3]
--- FD: reimbursement_id → all other columns                              (BCNF)
--- total_amount is derived and NOT stored; see the view in 02_views.sql [A3]
--- -----------------------------------------------------------------------------
+-- SUBMITS is folded in as applicant_id; APPROVES as approved_by, approval_date, remarks
 CREATE TABLE reimbursement (
     reimbursement_id  INT           NOT NULL AUTO_INCREMENT,
-    applicant_id      INT           NOT NULL,                   -- who submitted (SUBMITS)
-    claim_type        VARCHAR(10)   NOT NULL,                   -- which subclass table holds the details [A6]
+    applicant_id      INT           NOT NULL,
+    claim_type        VARCHAR(10)   NOT NULL,
     claim_date        DATE          NOT NULL DEFAULT (CURRENT_DATE),
-    status            VARCHAR(10)   NOT NULL DEFAULT 'SUBMITTED', -- [A5]
-    approved_by       INT           NULL,                       -- APPROVES: deciding manager (approve or reject)
-    approval_date     DATE          NULL,                       -- APPROVES: date of the decision [A9]
-    remarks           VARCHAR(255)  NULL,                       -- APPROVES: reason; required on rejection [A9]
+    status            VARCHAR(10)   NOT NULL DEFAULT 'SUBMITTED',
+    approved_by       INT           NULL,
+    approval_date     DATE          NULL,
+    remarks           VARCHAR(255)  NULL,
     CONSTRAINT pk_reimbursement PRIMARY KEY (reimbursement_id),
-    -- References applicant, not employee: only registered applicants can own claims [R3].
-    -- RESTRICT: claims are financial records and are kept [K3]. (MySQL would also refuse an
-    -- ON DELETE action here, because applicant_id and approved_by are used in CHECK C10.)
     CONSTRAINT fk_reimbursement_applicant FOREIGN KEY (applicant_id)
         REFERENCES applicant (employee_id),
-    -- References manager: a non-manager can never be the approver [S1]
     CONSTRAINT fk_reimbursement_approver FOREIGN KEY (approved_by)
         REFERENCES manager (employee_id),
 
-    -- [C5] the four statuses of the workflow [K4: CHECK ... IN, not ENUM or a lookup table]
     CONSTRAINT chk_reimbursement_status CHECK (status IN ('SUBMITTED', 'APPROVED', 'REJECTED', 'PAID')),
-    -- [C6] the three claim types (disjoint, total specialization) [S2]
     CONSTRAINT chk_reimbursement_type CHECK (claim_type IN ('TRAVEL', 'MEDICAL', 'BUSINESS')),
-    -- [C8] a decision exists exactly when the claim has left SUBMITTED
     CONSTRAINT chk_reimbursement_decision CHECK (
         (status = 'SUBMITTED' AND approved_by IS NULL AND approval_date IS NULL)
         OR (status <> 'SUBMITTED' AND approved_by IS NOT NULL AND approval_date IS NOT NULL)),
-    -- [C9] a rejection needs a reason
     CONSTRAINT chk_reimbursement_reject_remarks CHECK (
         status <> 'REJECTED' OR (remarks IS NOT NULL AND TRIM(remarks) <> '')),
-    -- [C10] no one decides their own claim
     CONSTRAINT chk_reimbursement_not_self CHECK (approved_by IS NULL OR approved_by <> applicant_id),
-    -- [C11] a claim cannot be decided before it is filed
     CONSTRAINT chk_reimbursement_dates CHECK (approval_date IS NULL OR approval_date >= claim_date),
 
-    INDEX idx_reimbursement_status (status)   -- the manager's queue filters on status
+    INDEX idx_reimbursement_status (status)
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- Subclasses of REIMBURSEMENT: disjoint and total [S2], method 1 [S3].
--- The application inserts only the details row matching claim_type, in one transaction.
--- Totality (every claim has its details row) is guaranteed by inserting both
--- in one transaction (application rule A1) [K2].
--- CASCADE: the details row is part of the claim [K3].
--- -----------------------------------------------------------------------------
+-- Subclasses of REIMBURSEMENT (disjoint, total)
 CREATE TABLE travel_reimbursement (
     reimbursement_id  INT           NOT NULL,
     travel_from       VARCHAR(100)  NOT NULL,
     travel_to         VARCHAR(100)  NOT NULL,
-    -- The distance of THIS trip as claimed. (travel_from, travel_to) → distance_km is
-    -- deliberately NOT an FD here [N1], otherwise this table would not be in 3NF.
     distance_km       DECIMAL(7,1)  NOT NULL,
     CONSTRAINT pk_travel PRIMARY KEY (reimbursement_id),
     CONSTRAINT fk_travel_reimbursement FOREIGN KEY (reimbursement_id)
         REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE,
-    CONSTRAINT chk_travel_distance CHECK (distance_km > 0)   -- [C12]
+    CONSTRAINT chk_travel_distance CHECK (distance_km > 0)
 ) ENGINE = InnoDB;
 
 CREATE TABLE medical_reimbursement (
@@ -173,32 +114,25 @@ CREATE TABLE medical_reimbursement (
 CREATE TABLE business_reimbursement (
     reimbursement_id  INT           NOT NULL,
     purpose           VARCHAR(200)  NOT NULL,
-    client_name       VARCHAR(100)  NULL,                    -- internal work has no client
+    client_name       VARCHAR(100)  NULL,
     CONSTRAINT pk_business PRIMARY KEY (reimbursement_id),
     CONSTRAINT fk_business_reimbursement FOREIGN KEY (reimbursement_id)
         REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
--- -----------------------------------------------------------------------------
--- expense_item: weak entity set EXPENSE_ITEM [W1]
--- Key = owner's key + discriminator item_no (1, 2, 3 … within each claim) [§6.7.3].
--- The identifying relationship CONTAINS needs no table [M3].
--- FD: (reimbursement_id, item_no) → all other columns                   (BCNF)
--- Saved items are read-only in the application; expense dates are validated before insertion.
--- -----------------------------------------------------------------------------
+-- Weak entity set: identified by its claim and item_no
 CREATE TABLE expense_item (
     reimbursement_id  INT            NOT NULL,
-    item_no           SMALLINT       NOT NULL,               -- discriminator
-    category          VARCHAR(20)    NOT NULL,               -- [A8]
+    item_no           SMALLINT       NOT NULL,
+    category          VARCHAR(20)    NOT NULL,
     description       VARCHAR(200)   NOT NULL,
-    amount            DECIMAL(10,2)  NOT NULL,               -- exact money type [K5]
+    amount            DECIMAL(10,2)  NOT NULL,
     expense_date      DATE           NOT NULL,
-    receipt_path      VARCHAR(255)   NULL,                   -- file on disk, path here; optional [A7]
+    receipt_path      VARCHAR(255)   NULL,
     CONSTRAINT pk_expense_item PRIMARY KEY (reimbursement_id, item_no),
-    -- CASCADE: existence dependence of a weak entity [W1][K3]
     CONSTRAINT fk_item_reimbursement FOREIGN KEY (reimbursement_id)
         REFERENCES reimbursement (reimbursement_id) ON DELETE CASCADE,
-    CONSTRAINT chk_item_category CHECK (category IN                -- [C7]
+    CONSTRAINT chk_item_category CHECK (category IN
         ('FOOD', 'LODGING', 'FARE', 'FUEL', 'LOCAL_TRANSPORT', 'MEDICAL', 'SUPPLIES', 'OTHER')),
-    CONSTRAINT chk_item_amount CHECK (amount > 0)                   -- [C12]
+    CONSTRAINT chk_item_amount CHECK (amount > 0)
 ) ENGINE = InnoDB;

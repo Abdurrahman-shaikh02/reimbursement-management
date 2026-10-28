@@ -378,7 +378,7 @@ def edge(svg, pts, label_lines, lx, ly, anchor='middle'):
 def build_status():
     svg = Svg(1180, 400)
     svg.text(40, 34, 'Claim status (reimbursement.status) — allowed transitions', size=19, weight='bold')
-    svg.text(40, 56, 'Double border = final state. Any transition not drawn is rejected by trigger T1. '
+    svg.text(40, 56, 'Double border = final state. Any transition not drawn is refused by the application (rule T1). '
              'C-numbers are constraints from the constraint catalogue.', size=12.5, color=MUTED)
     cy = 170
     svg.add(f'<circle cx="70" cy="{cy}" r="9" fill="{INK}"/>')
@@ -391,7 +391,7 @@ def build_status():
     state(svg, 1085, cy, 'PAID', 'final', final=True, w=130)
     edge(svg, [(265, cy + 31), (265, 300)], ['manager rejects', 'C9: remarks required'], 280, 255, anchor='start')
     state(svg, 265, 336, 'REJECTED', 'final; remarks NOT NULL', final=True)
-    svg.text(430, 336, 'Expense items may be added, changed or deleted only while the claim is SUBMITTED (trigger T2).',
+    svg.text(430, 336, 'Expense items are saved with the claim and cannot be changed afterwards (rule T2, application).',
              size=12.5, color=MUTED)
     svg.text(430, 356, 'Every move out of SUBMITTED records approved_by and approval_date (CHECK C8).',
              size=12.5, color=MUTED)

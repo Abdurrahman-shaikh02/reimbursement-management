@@ -5,7 +5,8 @@
   "description": "Generates report/RMS_Database_Design.docx and .pdf",
   "type": "module",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "build:submission": "node build.js submission"
   },
   "dependencies": {
     "docx": "^9.14.0"

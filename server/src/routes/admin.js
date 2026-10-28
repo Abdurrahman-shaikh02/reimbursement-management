@@ -1,5 +1,5 @@
 // Master data: departments and employees (with phones, supervisor and roles).
-// The design has no separate admin role (decision E4), so managers do this.
+// There is no separate admin role, so managers do this.
 import { Router } from 'express';
 import { query, transaction } from '../db.js';
 import { HttpError } from '../errors.js';

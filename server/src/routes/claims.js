@@ -39,7 +39,7 @@ router.get('/:id', async (req, res) => {
     throw new HttpError(403, 'You can only view your own claims.');
   }
 
-  // claim_type says which subclass table holds the details [A6]
+  // claim_type says which subclass table holds the details
   const table = `${claim.claim_type.toLowerCase()}_reimbursement`;
   const [details] = await query(`SELECT * FROM ${table} WHERE reimbursement_id = ?`, [claim.reimbursement_id]);
   const items = await query(

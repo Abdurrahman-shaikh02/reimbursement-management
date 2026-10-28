@@ -7,14 +7,13 @@ are marked paid. The emphasis of the project is the **database design**.
 | Folder | What is in it |
 |---|---|
 | `report/RMS_Database_Design.pdf` (and `.docx`) | The report: problem statement, objectives, functional requirements, ER diagram, relational schemas, functional dependencies, normalization to 3NF, integrity constraints, and the justification of every design decision |
-| `db/` | Commented SQL: schema, view, legacy trigger removal, app user, sample data, constraint tests |
+| `db/` | Commented SQL: schema, view, app user, sample data, constraint tests |
 | `server/` | REST API: Node.js + Express + mysql2 (plain SQL, no ORM) |
 | `client/` | Web frontend: React + Tailwind CSS (Vite) |
 | `report/er/`, `report/src/` | Sources of the diagrams and of the report |
+| `report/screenshots/` | Screenshots of every form |
+| `report/submission/` | The two files to upload: File 1 (code + screenshots, zipped) and File 2 (the report) |
 | `references/` | The assignment, the original ER diagram and the textbook |
-
-The comments in `db/*.sql` use the same decision IDs as the report (for example
-`[R3]`, `[C10]`, `[T1]`), so each line of SQL can be traced to its justification.
 
 ## Running it
 
@@ -26,7 +25,7 @@ docker compose up -d
 ./db/setup.sh                      # creates reimbursement_db with sample data (drops it first!)
 
 # optional: run the constraint tests (all rows should say PASS; nothing is changed)
-mysql -h 127.0.0.1 -P 3307 -u root -prootpass reimbursement_db < db/06_constraint_tests.sql
+mysql -h 127.0.0.1 -P 3307 -u root -prootpass reimbursement_db < db/05_constraint_tests.sql
 
 # 2. API on http://localhost:4000
 cd server
@@ -67,14 +66,13 @@ relationships before submitting. The API repeats these checks using shared valid
 functions, locking rows when saving decisions or changing the reporting hierarchy.
 Saved claims, details, decisions and expense items have no general edit endpoints.
 The database keeps its CHECK constraints and foreign keys, but has no triggers.
-`db/03_triggers.sql` removes legacy triggers and helper procedures. Direct SQL writes
-bypass application rules, so use the application for changes.
+Direct SQL writes bypass application rules, so use the application for changes.
 
 Run `npm test` in `server/` for shared validation tests. With the local database
 running, `npm run test:integration` also checks the API and concurrent writes using
 temporary records, which are removed afterward.
-The existing report documents the original trigger-based design; this README
-describes the current implementation.
+The report (Section 11, decision K1) explains why these cross-table rules (T1–T4)
+are checked by the application rather than by the database.
 
 API responses include performance headers (all durations are milliseconds):
 

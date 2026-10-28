@@ -1,11 +1,4 @@
--- =============================================================================
--- Reimbursement Management System — 05_seed.sql
 -- Sample data for the demo. Every password is "password123" (bcrypt hash below).
---
--- Claims are inserted the way the application does it: claim + details + items
--- while SUBMITTED, then decided with an UPDATE. So the seed itself passes
--- through the schema constraints. Application validations are tested separately.
--- =============================================================================
 USE reimbursement_db;
 
 INSERT INTO department (dept_id, dept_name, location) VALUES
@@ -13,7 +6,7 @@ INSERT INTO department (dept_id, dept_name, location) VALUES
     (2, 'Sales',           'Mumbai'),
     (3, 'Finance',         'Pune'),
     (4, 'Human Resources', 'Pune'),
-    (5, 'Legal',           'Mumbai');   -- no employees yet: DEPARTMENT is partial in WORKS_IN [R1]
+    (5, 'Legal',           'Mumbai');   -- no employees yet
 
 -- Inserted top-down so every supervisor exists before their subordinates.
 SET @pw = '$2b$10$ouPFKoOpu4kEf5hJLbx2FONotvNJiasuo3vkaWnwsaNrwumQxwWyi';  -- "password123"
@@ -29,7 +22,7 @@ INSERT INTO employee (employee_id, name, email, password_hash, designation, date
     (9,  'Meera Pillai',   'meera@rms.test',  @pw, 'HR Executive',           '2021-05-03', 4, 1),
     (10, 'Karan Shah',     'karan@rms.test',  @pw, 'Intern',                 '2026-07-01', 1, 5);
 
--- { phone } is multivalued: some employees have two numbers, Karan has none [A2]
+-- Some employees have two numbers, Karan has none
 INSERT INTO employee_phone (employee_id, phone) VALUES
     (1, '+919800000001'), (1, '02026110001'),
     (2, '+919800000002'),
@@ -41,9 +34,8 @@ INSERT INTO employee_phone (employee_id, phone) VALUES
     (8, '+919800000008'),
     (9, '+919800000009');
 
--- Roles. Overlapping: Rahul and Priya are managers AND applicants.
--- Partial: Karan (an intern with no bank account registered) has no role;
--- Anita is a manager only [S1].
+-- Roles: Rahul and Priya are managers and applicants, Anita is a manager only,
+-- Karan has no role.
 INSERT INTO manager (employee_id, approval_limit) VALUES
     (1, 500000.00),
     (2,  50000.00),
@@ -59,9 +51,7 @@ INSERT INTO applicant (employee_id, bank_account_no) VALUES
     (8, '50100234567807'),
     (9, '50100234567808');
 
--- -----------------------------------------------------------------------------
 -- Claims: header, then its details row, then its items (all while SUBMITTED)
--- -----------------------------------------------------------------------------
 INSERT INTO reimbursement (reimbursement_id, applicant_id, claim_type, claim_date) VALUES
     (1,  5, 'TRAVEL',   '2026-08-05'),
     (2,  7, 'BUSINESS', '2026-08-12'),
@@ -121,9 +111,7 @@ INSERT INTO expense_item (reimbursement_id, item_no, category, description, amou
     (11, 3, 'FOOD',            'Meals',                        2200.00, '2026-10-19', NULL),
     (12, 1, 'MEDICAL',         'Hospital stay and surgery',   85000.00, '2026-10-20', NULL);
 
--- -----------------------------------------------------------------------------
--- Decisions (APPROVES) and payments. Claims 9–12 stay SUBMITTED for the demo.
--- -----------------------------------------------------------------------------
+-- Decisions and payments. Claims 9–12 stay SUBMITTED for the demo.
 UPDATE reimbursement SET status = 'APPROVED', approved_by = 2, approval_date = '2026-08-07'  WHERE reimbursement_id = 1;
 UPDATE reimbursement SET status = 'APPROVED', approved_by = 3, approval_date = '2026-08-14'  WHERE reimbursement_id = 2;
 UPDATE reimbursement SET status = 'APPROVED', approved_by = 2, approval_date = '2026-08-21',

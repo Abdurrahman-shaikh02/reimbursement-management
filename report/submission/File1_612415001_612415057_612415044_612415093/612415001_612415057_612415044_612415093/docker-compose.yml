@@ -1,0 +1,15 @@
+# Optional: a throwaway MySQL 8.0 for development (needs 8.0.16+ so CHECK constraints are enforced).
+# Teammates with a local MySQL can skip this and point db/setup.sh at their own server.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: rms-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3307:3306"   # 3307 on the host so it never clashes with a local MySQL on 3306
+    volumes:
+      - rms-data:/var/lib/mysql
+
+volumes:
+  rms-data:
