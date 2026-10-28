@@ -12,6 +12,7 @@ import Departments from './pages/Departments.jsx';
 import Employees from './pages/Employees.jsx';
 import EmployeeForm from './pages/EmployeeForm.jsx';
 import Reports from './pages/Reports.jsx';
+import { Card, Loading, Notice, PageHeader } from './components/ui.jsx';
 
 // Where each user lands after logging in
 const home = (user) => (user.is_applicant ? '/claims' : user.is_manager ? '/approvals' : '/no-role');
@@ -24,7 +25,10 @@ export default function App() {
   // Restore the session from the stored token
   useEffect(() => {
     if (!getToken()) return;
-    api('/auth/me').then(setUser).catch(() => setToken(null)).finally(() => setLoading(false));
+    api('/auth/me')
+      .then(setUser)
+      .catch(() => setToken(null))
+      .finally(() => setLoading(false));
   }, []);
 
   const onLogin = ({ token, user: u }) => {
@@ -32,13 +36,19 @@ export default function App() {
     setUser(u);
     navigate(home(u));
   };
+
   const onLogout = () => {
     setToken(null);
     setUser(null);
     navigate('/login');
   };
 
-  if (loading) return null;
+  if (loading)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loading label="Restoring your session" />
+      </div>
+    );
   if (!user) {
     return (
       <Routes>
@@ -48,6 +58,7 @@ export default function App() {
   }
 
   const applicantOnly = (el) => (user.is_applicant ? el : <Navigate to={home(user)} />);
+
   const managerOnly = (el) => (user.is_manager ? el : <Navigate to={home(user)} />);
 
   return (
@@ -63,7 +74,23 @@ export default function App() {
         <Route path="/employees/new" element={managerOnly(<EmployeeForm />)} />
         <Route path="/employees/:id" element={managerOnly(<EmployeeForm />)} />
         <Route path="/reports" element={managerOnly(<Reports />)} />
-        <Route path="/no-role" element={<p className="text-gray-600">Your account has no role yet. Ask a manager to register you as an applicant or a manager.</p>} />
+        <Route
+          path="/no-role"
+          element={
+            <>
+              <PageHeader
+                title="Welcome to your workspace"
+                description="Your profile is ready. Your next step is getting the right access."
+              />
+              <Card title="A role is needed to get started">
+                <Notice>
+                  Ask a manager to register you as an applicant or manager so you can start using the
+                  workspace.
+                </Notice>
+              </Card>
+            </>
+          }
+        />
         <Route path="*" element={<Navigate to={home(user)} />} />
       </Routes>
     </Layout>

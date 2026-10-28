@@ -1,13 +1,32 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, money } from '../api.js';
+import { api, formatDate, humanize, money } from '../api.js';
 import { useLoad } from '../useLoad.js';
-import { Button, Card, ErrorBox, Field, StatusBadge, Table, Td, Textarea } from '../components/ui.jsx';
+import { validateClaimAction } from '../../../shared/validation.mjs';
+import Icon from '../components/Icon.jsx';
+import {
+  Button,
+  Card,
+  ErrorBox,
+  Field,
+  Loading,
+  Notice,
+  PageHeader,
+  StatGrid,
+  StatusBadge,
+  Table,
+  Td,
+  Textarea,
+} from '../components/ui.jsx';
 
 const DETAIL_LABELS = {
-  travel_from: 'From', travel_to: 'To', distance_km: 'Distance (km)',
-  hospital_name: 'Hospital', treatment_type: 'Treatment',
-  purpose: 'Purpose', client_name: 'Client',
+  travel_from: 'From',
+  travel_to: 'To',
+  distance_km: 'Distance (km)',
+  hospital_name: 'Hospital',
+  treatment_type: 'Treatment',
+  purpose: 'Purpose',
+  client_name: 'Client',
 };
 
 export default function ClaimDetail({ user }) {
@@ -15,79 +34,198 @@ export default function ClaimDetail({ user }) {
   const { data: claim, error: loadError, reload } = useLoad(`/claims/${id}`);
   const [remarks, setRemarks] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
   const act = async (path, body) => {
     setError('');
+    const validationError = validateClaimAction(
+      claim,
+      user,
+      path === 'pay' ? 'PAID' : body.decision,
+      body?.remarks,
+    );
+    if (validationError) return setError(validationError);
+    setSaving(true);
     try {
       await api(`/claims/${id}/${path}`, { method: 'POST', body });
       reload();
     } catch (err) {
       setError(err.message);
+      reload();
+    } finally {
+      setSaving(false);
     }
   };
 
   if (loadError) return <ErrorBox error={loadError} />;
-  if (!claim) return null;
+  if (!claim) return <Loading label="Opening claim" />;
 
   const own = claim.applicant_id === user.id;
   const canDecide = user.is_manager && !own && claim.status === 'SUBMITTED';
   const canPay = user.is_manager && !own && claim.status === 'APPROVED';
+  const approvalError = canDecide ? validateClaimAction(claim, user, 'APPROVED', remarks) : '';
+
+  const reviewed = claim.status !== 'SUBMITTED';
 
   return (
     <>
-      <Card title={`Claim #${claim.reimbursement_id} · ${claim.claim_type}`} actions={<StatusBadge status={claim.status} />}>
-        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-          <Info label="Applicant">{claim.applicant_name} ({claim.dept_name})</Info>
-          <Info label="Claim date">{claim.claim_date}</Info>
-          <Info label="Total">{money(claim.total_amount)}</Info>
-          <Info label="Items">{claim.item_count}</Info>
+      <PageHeader
+        eyebrow="CLAIM DETAILS"
+        title={`Claim CLM-${String(claim.reimbursement_id).padStart(3, '0')}`}
+        description={`${humanize(claim.claim_type)} reimbursement / Submitted ${formatDate(claim.claim_date)}`}
+        actions={<StatusBadge status={claim.status} />}
+      />
+      <ErrorBox error={error} />
+      <StatGrid
+        items={[
+          {
+            label: 'Claim amount',
+            value: money(claim.total_amount),
+            detail: humanize(claim.claim_type) + ' expense',
+            icon: 'wallet',
+          },
+          {
+            label: 'Expense items',
+            value: claim.item_count,
+            detail: 'Included in this claim',
+            icon: 'receipt',
+            tone: 'blue',
+          },
+          {
+            label: 'Submitted on',
+            value: formatDate(claim.claim_date),
+            detail: 'Original claim date',
+            icon: 'calendar',
+            tone: 'amber',
+          },
+          {
+            label: 'Reviewed by',
+            value: claim.approver_name ?? 'Awaiting review',
+            detail: claim.approval_date ? formatDate(claim.approval_date) : 'No decision yet',
+            icon: 'shield',
+            tone: 'purple',
+          },
+        ]}
+      />
+      <Card title="Claim overview" description="The people, details and progress behind this reimbursement">
+        <dl className="info-grid">
+          <Info label="Applicant">{claim.applicant_name}</Info>
+          <Info label="Department">{claim.dept_name}</Info>
+          <Info label="Claim type">{humanize(claim.claim_type)}</Info>
           {Object.entries(claim.details)
-            .filter(([k]) => k !== 'reimbursement_id')
-            .map(([k, v]) => <Info key={k} label={DETAIL_LABELS[k] ?? k}>{v ?? '—'}</Info>)}
-          {claim.approved_by && (
+            .filter(([key]) => key !== 'reimbursement_id')
+            .map(([key, value]) => (
+              <Info key={key} label={DETAIL_LABELS[key] ?? humanize(key)}>
+                {value || '-'}
+              </Info>
+            ))}
+          {claim.remarks && <Info label="Manager remarks">{claim.remarks}</Info>}
+        </dl>
+        <div className="claim-progress" aria-label={`Claim status: ${claim.status}`}>
+          <div className="progress-step done">
+            <span>
+              <Icon name="check" size={13} />
+            </span>
+            Submitted
+          </div>
+          <div className="progress-line" />
+          <div className={`progress-step ${reviewed ? 'done' : ''}`}>
+            <span>{reviewed ? <Icon name="check" size={13} /> : '2'}</span>
+            {claim.status === 'REJECTED' ? 'Rejected' : 'Reviewed'}
+          </div>
+          {claim.status !== 'REJECTED' && (
             <>
-              <Info label="Decided by">{claim.approver_name}</Info>
-              <Info label="Decision date">{claim.approval_date}</Info>
-              <Info label="Remarks">{claim.remarks ?? '—'}</Info>
+              <div className="progress-line" />
+              <div className={`progress-step ${claim.status === 'PAID' ? 'done' : ''}`}>
+                <span>{claim.status === 'PAID' ? <Icon name="check" size={13} /> : '3'}</span>Paid
+              </div>
             </>
           )}
-        </dl>
+        </div>
       </Card>
-
-      <Card title="Expense items">
-        <Table headers={['No', 'Date', 'Category', 'Description', 'Amount', 'Receipt']}>
-          {claim.items.map((it) => (
-            <tr key={it.item_no}>
-              <Td>{it.item_no}</Td>
-              <Td>{it.expense_date}</Td>
-              <Td>{it.category}</Td>
-              <Td>{it.description}</Td>
-              <Td>{money(it.amount)}</Td>
-              <Td>{it.receipt_path ? <a className="text-blue-700 underline" href={it.receipt_path} target="_blank" rel="noreferrer">view</a> : '—'}</Td>
+      <Card title="Expense breakdown" description="Individual expenses and their supporting documents">
+        <Table headers={['Item', 'Expense date', 'Category', 'Description', 'Amount', 'Receipt']}>
+          {claim.items.map((item) => (
+            <tr key={item.item_no}>
+              <Td>{String(item.item_no).padStart(2, '0')}</Td>
+              <Td className="whitespace-nowrap">{formatDate(item.expense_date)}</Td>
+              <Td>
+                <span className="tag">{humanize(item.category)}</span>
+              </Td>
+              <Td>{item.description}</Td>
+              <Td className="amount">{money(item.amount)}</Td>
+              <Td>
+                {item.receipt_path ? (
+                  <a className="record-link" href={item.receipt_path} target="_blank" rel="noreferrer">
+                    View receipt
+                  </a>
+                ) : (
+                  <span className="table-meta">Not attached</span>
+                )}
+              </Td>
             </tr>
           ))}
         </Table>
       </Card>
-
       {(canDecide || canPay) && (
-        <Card title={canDecide ? 'Decision' : 'Payment'}>
-          <ErrorBox error={error} />
+        <Card
+          title={canDecide ? 'Review & decide' : 'Complete reimbursement'}
+          description={
+            canDecide
+              ? 'Review the details above before recording your decision'
+              : 'Mark this claim as paid after completing the reimbursement'
+          }
+        >
           {canDecide && (
-            <div className="space-y-3">
-              <Field label="Remarks (required to reject)"><Textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} /></Field>
-              <div className="flex gap-2">
-                <Button variant="success" onClick={() => act('decision', { decision: 'APPROVED', remarks })}>Approve</Button>
-                <Button variant="danger" onClick={() => act('decision', { decision: 'REJECTED', remarks })}>Reject</Button>
+            <div className="form-grid">
+              <Field
+                label="Manager remarks"
+                hint="Required when rejecting a claim. Saved decisions cannot be edited."
+              >
+                <Textarea
+                  maxLength={255}
+                  placeholder="Add context for your decision..."
+                  value={remarks}
+                  onChange={(event) => setRemarks(event.target.value)}
+                />
+              </Field>
+              <div>
+                <Notice>Your approval limit is {money(user.approval_limit)} per claim.</Notice>
+                {approvalError && <ErrorBox error={approvalError} />}
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="success"
+                    disabled={saving || !!approvalError}
+                    onClick={() => act('decision', { decision: 'APPROVED', remarks })}
+                  >
+                    <Icon name="check" size={16} />
+                    Approve claim
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={saving || !remarks.trim()}
+                    onClick={() => act('decision', { decision: 'REJECTED', remarks })}
+                  >
+                    <Icon name="close" size={16} />
+                    Reject claim
+                  </Button>
+                </div>
               </div>
-              <p className="text-xs text-gray-500">Your approval limit: {money(user.approval_limit)}</p>
             </div>
           )}
-          {canPay && <Button onClick={() => act('pay')}>Mark as paid</Button>}
+          {canPay && (
+            <Button disabled={saving} onClick={() => act('pay')}>
+              <Icon name="wallet" size={16} />
+              {saving ? 'Processing...' : 'Mark as paid'}
+            </Button>
+          )}
         </Card>
       )}
-
-      <button onClick={() => navigate(-1)} className="text-sm text-blue-700 underline">Back</button>
+      <Button variant="secondary" onClick={() => navigate(-1)}>
+        <Icon name="back" size={16} />
+        Back to previous page
+      </Button>
     </>
   );
 }
@@ -95,7 +233,7 @@ export default function ClaimDetail({ user }) {
 function Info({ label, children }) {
   return (
     <div>
-      <dt className="text-gray-500">{label}</dt>
+      <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
   );

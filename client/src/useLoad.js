@@ -1,13 +1,35 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
 
-// Loads GET /api<path>; returns { data, error, reload }.
+// Ignore superseded requests so fast navigation cannot display a previous record.
 export function useLoad(path) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
+
   const reload = useCallback(() => {
-    api(path).then(setData).catch((e) => setError(e.message));
+    const id = ++requestId.current;
+    setLoading(true);
+    setError('');
+    return api(path)
+      .then((result) => {
+        if (id === requestId.current) setData(result);
+      })
+      .catch((err) => {
+        if (id === requestId.current) setError(err.message);
+      })
+      .finally(() => {
+        if (id === requestId.current) setLoading(false);
+      });
   }, [path]);
-  useEffect(reload, [reload]);
-  return { data, error, reload };
+
+  useEffect(() => {
+    setData(null);
+    reload();
+    return () => {
+      requestId.current += 1;
+    };
+  }, [reload]);
+  return { data, error, loading, reload };
 }

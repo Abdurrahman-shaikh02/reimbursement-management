@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { query, transaction } from '../db.js';
 import { HttpError } from '../errors.js';
 import { hashPassword } from '../auth.js';
+import { validateSupervisor } from '../../../shared/validation.mjs';
 
 const router = Router();
 
@@ -47,7 +48,7 @@ router.delete('/departments/:id', async (req, res) => {
 router.get('/employees', async (req, res) => {
   const rows = await query(
     `SELECT e.employee_id, e.name, e.email, e.designation, e.date_of_joining,
-            d.dept_name, s.name AS supervisor_name,
+            d.dept_name, e.supervisor_id, s.name AS supervisor_name,
             a.employee_id IS NOT NULL AS is_applicant,
             m.approval_limit,
             (SELECT GROUP_CONCAT(p.phone SEPARATOR ', ') FROM employee_phone p
@@ -83,6 +84,12 @@ async function saveEmployee(conn, id, body) {
     name, email, designation, date_of_joining, dept_id, supervisor_id,
     phones = [], bank_account_no, approval_limit,
   } = body;
+  // Serialize hierarchy writes in this small employee directory so concurrent
+  // supervisor changes cannot each validate against an outdated reporting tree.
+  const [employees] = await conn.query('SELECT employee_id, supervisor_id FROM employee ORDER BY employee_id FOR UPDATE');
+  if (id && !employees.some((employee) => employee.employee_id === id)) throw new HttpError(404, 'Employee not found.');
+  const validationError = validateSupervisor(id, supervisor_id, employees);
+  if (validationError) throw new HttpError(400, validationError);
   const values = [
     name?.trim() || null, email?.trim().toLowerCase() || null, designation?.trim() || null,
     date_of_joining || null, dept_id || null, supervisor_id || null,

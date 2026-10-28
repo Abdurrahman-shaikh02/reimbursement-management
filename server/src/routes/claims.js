@@ -4,11 +4,11 @@ import { query, transaction } from '../db.js';
 import { HttpError } from '../errors.js';
 import { requireApplicant, requireManager } from '../auth.js';
 import { removeFiles, upload } from '../uploads.js';
+import { CATEGORIES, CLAIM_TYPES, validateClaim, validateClaimAction } from '../../../shared/validation.mjs';
+
+export { CATEGORIES, CLAIM_TYPES };
 
 const router = Router();
-
-export const CLAIM_TYPES = ['TRAVEL', 'MEDICAL', 'BUSINESS'];
-export const CATEGORIES = ['FOOD', 'LODGING', 'FARE', 'FUEL', 'LOCAL_TRANSPORT', 'MEDICAL', 'SUPPLIES', 'OTHER'];
 
 // My claims, newest first, with the derived total from the view
 router.get('/', requireApplicant, async (req, res) => {
@@ -56,17 +56,18 @@ router.get('/:id', async (req, res) => {
 router.post('/', requireApplicant, upload.any(), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data ?? '{}');
-    const { claim_type: type, details = {}, items = [] } = data;
-    if (!CLAIM_TYPES.includes(type)) throw new HttpError(400, 'Choose a claim type.');
-    if (!Array.isArray(items) || items.length === 0) throw new HttpError(400, 'Add at least one expense item.');
+    const { claim_type: type, details = {}, items = [] } = data ?? {};
 
     const receipts = Object.fromEntries((req.files ?? []).map((f) => [f.fieldname, f]));
 
     const id = await transaction(async (conn) => {
-      // claim_date is left to its DEFAULT (today): the server sets it, never the form (rule A2)
+      // Use one database date for validation and storage, including across midnight.
+      const [[{ claim_date: claimDate }]] = await conn.query('SELECT CURRENT_DATE AS claim_date');
+      const validationError = validateClaim(data, claimDate);
+      if (validationError) throw new HttpError(400, validationError);
       const [r] = await conn.query(
-        'INSERT INTO reimbursement (applicant_id, claim_type) VALUES (?, ?)',
-        [req.user.id, type],
+        "INSERT INTO reimbursement (applicant_id, claim_type, claim_date, status) VALUES (?, ?, ?, 'SUBMITTED')",
+        [req.user.id, type, claimDate],
       );
       const claimId = r.insertId;
 
@@ -107,34 +108,39 @@ router.post('/', requireApplicant, upload.any(), async (req, res) => {
   }
 });
 
-// Approve or reject. The database checks the rest: not your own claim (C10),
-// remarks on rejection (C9), total within your limit (T1).
+// Lock the claim and current manager limit while validating and saving a decision.
+// Claims and their items have no edit endpoints; saved identity, details and items stay read-only.
 router.post('/:id/decision', requireManager, async (req, res) => {
-  const { decision, remarks } = req.body;
-  if (!['APPROVED', 'REJECTED'].includes(decision)) throw new HttpError(400, 'Decision must be APPROVED or REJECTED.');
-
-  const result = await query(
-    `UPDATE reimbursement
-     SET status = ?, approved_by = ?, approval_date = CURRENT_DATE, remarks = ?
-     WHERE reimbursement_id = ? AND status = 'SUBMITTED'`,
-    [decision, req.user.id, remarks?.trim() || null, req.params.id],
-  );
-  if (result.affectedRows === 0) throw new HttpError(409, 'This claim is no longer waiting for a decision.');
+  const { decision, remarks = '' } = req.body;
+  await transaction(async (conn) => {
+    const [[manager]] = await conn.query('SELECT approval_limit FROM manager WHERE employee_id = ? FOR UPDATE', [req.user.id]);
+    const [[claim]] = await conn.query('SELECT * FROM reimbursement WHERE reimbursement_id = ? FOR UPDATE', [req.params.id]);
+    if (!claim) throw new HttpError(404, 'Claim not found.');
+    const [[totals]] = await conn.query(
+      'SELECT COUNT(*) AS item_count, COALESCE(SUM(amount), 0) AS total_amount FROM expense_item WHERE reimbursement_id = ?',
+      [req.params.id],
+    );
+    const validationError = validateClaimAction(
+      { ...claim, ...totals }, { ...req.user, is_manager: !!manager, approval_limit: manager?.approval_limit }, decision, remarks,
+    );
+    if (validationError) throw new HttpError(400, validationError);
+    await conn.query(
+      'UPDATE reimbursement SET status = ?, approved_by = ?, approval_date = CURRENT_DATE, remarks = ? WHERE reimbursement_id = ?',
+      [decision, req.user.id, remarks.trim() || null, req.params.id],
+    );
+  });
   res.json({ ok: true });
 });
 
-// Mark an approved claim as paid. Not modelled as a role (design decision E4);
-// any manager may do it, except for their own claim.
+// A locking read makes concurrent decisions/payments see the latest saved status.
 router.post('/:id/pay', requireManager, async (req, res) => {
-  const [claim] = await query('SELECT applicant_id FROM reimbursement WHERE reimbursement_id = ?', [req.params.id]);
-  if (!claim) throw new HttpError(404, 'Claim not found.');
-  if (claim.applicant_id === req.user.id) throw new HttpError(403, 'You cannot mark your own claim as paid.');
-
-  const result = await query(
-    "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = ? AND status = 'APPROVED'",
-    [req.params.id],
-  );
-  if (result.affectedRows === 0) throw new HttpError(409, 'Only approved claims can be marked paid.');
+  await transaction(async (conn) => {
+    const [[claim]] = await conn.query('SELECT * FROM reimbursement WHERE reimbursement_id = ? FOR UPDATE', [req.params.id]);
+    if (!claim) throw new HttpError(404, 'Claim not found.');
+    const validationError = validateClaimAction(claim, req.user, 'PAID');
+    if (validationError) throw new HttpError(400, validationError);
+    await conn.query("UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = ?", [req.params.id]);
+  });
   res.json({ ok: true });
 });
 

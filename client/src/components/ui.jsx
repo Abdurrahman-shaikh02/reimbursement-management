@@ -1,80 +1,197 @@
-// A few shared building blocks, styled with Tailwind.
-export function Button({ variant = 'primary', className = '', ...props }) {
-  const styles = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700',
-    secondary: 'bg-white border border-gray-300 hover:bg-gray-100',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
-    success: 'bg-green-600 text-white hover:bg-green-700',
-  };
+import { Link } from 'react-router-dom';
+import Icon from './Icon.jsx';
+
+export function Button({ variant = 'primary', className = '', type = 'button', ...props }) {
+  return <button type={type} className={`button button--${variant} ${className}`} {...props} />;
+}
+
+export function ButtonLink({ to, children, variant = 'primary', className = '' }) {
   return (
-    <button
-      className={`rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${styles[variant]} ${className}`}
-      {...props}
-    />
+    <Link to={to} className={`button button--${variant} ${className}`}>
+      {children}
+    </Link>
   );
 }
 
-export function Field({ label, children }) {
+export function Field({ label, hint, children }) {
   return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-gray-700">{label}</span>
+    <label className="field">
+      <span className="field-label">{label}</span>
       {children}
+      {hint && <span className="field-hint">{hint}</span>}
     </label>
   );
 }
 
-const inputClass = 'w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none';
-export const Input = (props) => <input className={inputClass} {...props} />;
-export const Select = (props) => <select className={inputClass} {...props} />;
-export const Textarea = (props) => <textarea className={inputClass} rows={3} {...props} />;
+export function Input({ className = '', ...props }) {
+  return <input className={`input ${className}`} {...props} />;
+}
+
+export function Select({ className = '', ...props }) {
+  return <select className={`input select ${className}`} {...props} />;
+}
+
+export function Textarea({ className = '', ...props }) {
+  return <textarea className={`input textarea ${className}`} rows={3} {...props} />;
+}
 
 export function ErrorBox({ error }) {
   if (!error) return null;
-  return <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>;
+  return (
+    <div className="alert alert--error" role="alert">
+      <Icon name="info" />
+      <span>{error}</span>
+    </div>
+  );
 }
 
-export function Card({ title, children, actions }) {
+export function Notice({ children }) {
   return (
-    <section className="mb-6 rounded border border-gray-200 bg-white p-4">
+    <div className="notice">
+      <Icon name="info" size={18} />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+export function Card({ title, description, children, actions, className = '' }) {
+  return (
+    <section className={`card ${className}`}>
       {(title || actions) && (
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">{title}</h2>
-          {actions}
+        <div className="card-header">
+          <div>
+            <h2>{title}</h2>
+            {description && <p>{description}</p>}
+          </div>
+          {actions && <div className="card-actions">{actions}</div>}
         </div>
       )}
-      {children}
+      <div className="card-body">{children}</div>
     </section>
   );
 }
 
-export function Table({ headers, children, empty = 'Nothing to show.' }) {
+export function PageHeader({ eyebrow = 'Your workspace', title, description, actions }) {
+  return (
+    <div className="page-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        {description && <p className="page-description">{description}</p>}
+      </div>
+      {actions && <div className="page-actions">{actions}</div>}
+    </div>
+  );
+}
+
+export function StatGrid({ items }) {
+  return (
+    <div className="stats-grid">
+      {items.map(({ label, value, detail, icon = 'chart', tone = 'green' }) => (
+        <div className="stat-card" key={label}>
+          <div className="stat-top">
+            <span>{label}</span>
+            <span className={`stat-icon tone-${tone}`}>
+              <Icon name={icon} size={19} />
+            </span>
+          </div>
+          <strong className="stat-value">{value ?? <span className="skeleton skeleton-number" />}</strong>
+          {detail && <span className="stat-detail">{detail}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function Table({ headers, children, empty = 'No records yet.', loading = false }) {
   const rows = Array.isArray(children) ? children.flat().filter(Boolean) : children;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div className="table-scroll" tabIndex={0} role="region" aria-label="Scrollable data table">
+      <table className="data-table">
         <thead>
-          <tr className="border-b border-gray-200 text-left text-gray-600">
-            {headers.map((h) => <th key={h} className="px-2 py-2 font-medium">{h}</th>)}
+          <tr>
+            {headers.map((header, index) => (
+              <th scope="col" key={index}>
+                {header || <span className="sr-only">Actions</span>}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows && (!Array.isArray(rows) || rows.length)
-            ? rows
-            : <tr><td colSpan={headers.length} className="px-2 py-4 text-center text-gray-500">{empty}</td></tr>}
+          {loading ? (
+            <tr>
+              <td colSpan={headers.length}>
+                <Loading label="Loading records" />
+              </td>
+            </tr>
+          ) : rows && (!Array.isArray(rows) || rows.length) ? (
+            rows
+          ) : (
+            <tr>
+              <td colSpan={headers.length}>
+                <div className="empty-state">
+                  <span className="empty-icon">
+                    <Icon name="receipt" size={26} />
+                  </span>
+                  <strong>{empty}</strong>
+                  <p>Your records will appear here when available.</p>
+                </div>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
   );
 }
 
-export const Td = ({ className = '', ...props }) => <td className={`border-b border-gray-100 px-2 py-2 ${className}`} {...props} />;
+export function Td({ className = '', ...props }) {
+  return <td className={className} {...props} />;
+}
 
-const STATUS_COLORS = {
-  SUBMITTED: 'bg-yellow-100 text-yellow-800',
-  APPROVED: 'bg-blue-100 text-blue-800',
-  PAID: 'bg-green-100 text-green-800',
-  REJECTED: 'bg-red-100 text-red-800',
-};
 export function StatusBadge({ status }) {
-  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[status] ?? ''}`}>{status}</span>;
+  return (
+    <span className={`status-badge status-${status?.toLowerCase()}`}>
+      <span />
+      {status === 'SUBMITTED' ? 'Pending review' : status?.charAt(0) + status?.slice(1).toLowerCase()}
+    </span>
+  );
+}
+
+export function Loading({ label = 'Loading your workspace' }) {
+  return (
+    <div className="loading-state" role="status">
+      <span className="spinner" />
+      <span>{label}...</span>
+    </div>
+  );
+}
+
+export function SearchInput({ value, onChange, placeholder = 'Search records...' }) {
+  return (
+    <div className="search-input">
+      <Icon name="search" size={18} />
+      <Input
+        type="search"
+        aria-label={placeholder}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+      />
+    </div>
+  );
+}
+
+export function Avatar({ name, small = false }) {
+  const initials = (name || '?')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('');
+  return (
+    <span className={`avatar ${small ? 'avatar--small' : ''}`} aria-hidden="true">
+      {initials}
+    </span>
+  );
 }
