@@ -1,5 +1,4 @@
-// Turns errors into JSON responses. The database enforces the business rules,
-// so most "user" errors arrive here as MySQL errors; we give them a readable message.
+// Turns application validation and database constraint errors into readable JSON responses.
 
 export class HttpError extends Error {
   constructor(status, message) {
@@ -35,9 +34,6 @@ const UNIQUE_MESSAGES = {
 const label = (column) => column.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
 function fromMysql(err) {
-  // SIGNAL SQLSTATE '45000' in a trigger: the message is already written for users
-  if (err.sqlState === '45000') return [400, err.sqlMessage];
-
   switch (err.errno) {
     case 3819: { // CHECK constraint violated
       const name = /'([^']+)'/.exec(err.sqlMessage)?.[1];

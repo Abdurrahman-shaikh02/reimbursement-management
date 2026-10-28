@@ -4,7 +4,7 @@
 --
 -- Claims are inserted the way the application does it: claim + details + items
 -- while SUBMITTED, then decided with an UPDATE. So the seed itself passes
--- through every trigger and CHECK, and proves the rules accept valid data.
+-- through the schema constraints. Application validations are tested separately.
 -- =============================================================================
 USE reimbursement_db;
 

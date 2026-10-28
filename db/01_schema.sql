@@ -6,7 +6,7 @@
 -- Tags in square brackets point to it:
 --   E/A/R/S/G/W/M/K = design decisions (Section 6, 7, 11.4)
 --   C1–C14          = constraints declared in the tables (Section 11.1)
---   T1–T4           = triggers, see 03_triggers.sql
+--   T1-T4           = application validations (shared/validation.mjs and API routes)
 --
 -- Needs MySQL 8.0.16 or later: older versions parse CHECK constraints but ignore them [K1].
 -- =============================================================================
@@ -52,7 +52,7 @@ CREATE TABLE employee (
         REFERENCES employee (employee_id),
     CONSTRAINT chk_employee_email CHECK (email LIKE '%_@_%._%')   -- [C14]
     -- "Not your own supervisor, no cycles" cannot be a CHECK: MySQL forbids
-    -- AUTO_INCREMENT columns in CHECK, and cycles need a recursive query. See T4.
+    -- AUTO_INCREMENT columns in CHECK. The application validates the supervision tree.
 ) ENGINE = InnoDB;
 
 -- -----------------------------------------------------------------------------
@@ -143,7 +143,7 @@ CREATE TABLE reimbursement (
 
 -- -----------------------------------------------------------------------------
 -- Subclasses of REIMBURSEMENT: disjoint and total [S2], method 1 [S3].
--- Disjointness (details row matches claim_type) is checked by trigger T3.
+-- The application inserts only the details row matching claim_type, in one transaction.
 -- Totality (every claim has its details row) is guaranteed by inserting both
 -- in one transaction (application rule A1) [K2].
 -- CASCADE: the details row is part of the claim [K3].
@@ -184,7 +184,7 @@ CREATE TABLE business_reimbursement (
 -- Key = owner's key + discriminator item_no (1, 2, 3 … within each claim) [§6.7.3].
 -- The identifying relationship CONTAINS needs no table [M3].
 -- FD: (reimbursement_id, item_no) → all other columns                   (BCNF)
--- Items may change only while the claim is SUBMITTED: trigger T2.
+-- Saved items are read-only in the application; expense dates are validated before insertion.
 -- -----------------------------------------------------------------------------
 CREATE TABLE expense_item (
     reimbursement_id  INT            NOT NULL,

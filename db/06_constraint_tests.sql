@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Reimbursement Management System — 06_constraint_tests.sql
--- Tries every rule from the constraint catalogue (report Section 11.1) with data
--- that breaks it, and a few valid operations that must still work.
+-- Tests database keys, foreign keys and CHECK constraints with invalid data.
+-- Workflow and hierarchy rules live in the application; run npm test in server/.
 -- Prints one row per test: PASS means the database behaved as designed.
 -- Everything runs in one transaction that is rolled back: the data is unchanged.
 --
@@ -123,56 +123,6 @@ CALL expect_error('C13', 'Phone number with letters',
     "INSERT INTO employee_phone VALUES (10, 'call-me')");
 CALL expect_error('C14', 'Email without a domain',
     "UPDATE employee SET email = 'karan' WHERE employee_id = 10");
-
--- T1: workflow --------------------------------------------------------------------
-CALL expect_error('T1', 'Insert a claim that is already APPROVED',
-    "INSERT INTO reimbursement (applicant_id, claim_type, claim_date, status, approved_by, approval_date) VALUES (5, 'TRAVEL', '2026-10-25', 'APPROVED', 1, '2026-10-26')");
-CALL expect_error('T1', 'APPROVED back to SUBMITTED',
-    "UPDATE reimbursement SET status = 'SUBMITTED', approved_by = NULL, approval_date = NULL WHERE reimbursement_id = 5");
-CALL expect_error('T1', 'REJECTED to PAID',
-    "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = 4");
-CALL expect_error('T1', 'SUBMITTED straight to PAID',
-    "UPDATE reimbursement SET status = 'PAID', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 9");
-CALL expect_error('T1', 'Priya (limit 75,000) approves an 85,000 claim',
-    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 3, approval_date = '2026-10-26' WHERE reimbursement_id = 12");
-CALL expect_ok('setup', 'An empty claim (no items yet)',
-    "INSERT INTO reimbursement (reimbursement_id, applicant_id, claim_type, claim_date) VALUES (101, 5, 'TRAVEL', '2026-10-25')");
-CALL expect_error('T1', 'Approve a claim with no items',
-    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 101");
-CALL expect_error('T1', 'Change the applicant of a claim',
-    "UPDATE reimbursement SET applicant_id = 6 WHERE reimbursement_id = 9");
-CALL expect_error('T1', 'Edit the remarks of a decided claim',
-    "UPDATE reimbursement SET remarks = 'changed my mind' WHERE reimbursement_id = 4");
-CALL expect_ok('T1', 'Anita (limit 500,000) approves the 85,000 claim',
-    "UPDATE reimbursement SET status = 'APPROVED', approved_by = 1, approval_date = '2026-10-26' WHERE reimbursement_id = 12");
-CALL expect_ok('T1', '... and it is marked paid',
-    "UPDATE reimbursement SET status = 'PAID' WHERE reimbursement_id = 12");
-
--- T2: items frozen after the decision ----------------------------------------------
-CALL expect_error('T2', 'Add an item to a PAID claim',
-    "INSERT INTO expense_item VALUES (1, 4, 'FOOD', 'x', 100, '2026-08-03', NULL)");
-CALL expect_error('T2', 'Change an item amount on an APPROVED claim',
-    "UPDATE expense_item SET amount = 99999 WHERE reimbursement_id = 5 AND item_no = 1");
-CALL expect_error('T2', 'Delete an item from a REJECTED claim',
-    "DELETE FROM expense_item WHERE reimbursement_id = 4 AND item_no = 1");
-CALL expect_error('T2', 'Expense dated after the claim date',
-    "INSERT INTO expense_item VALUES (9, 3, 'FOOD', 'x', 10, '2026-10-20', NULL)");
-CALL expect_ok('T2', 'Add an item to a SUBMITTED claim',
-    "INSERT INTO expense_item VALUES (9, 3, 'FOOD', 'Snacks', 150, '2026-10-11', NULL)");
-
--- T3: disjoint specialization ----------------------------------------------------------
-CALL expect_error('T3', 'Travel details for a BUSINESS claim',
-    "INSERT INTO travel_reimbursement VALUES (9, 'Pune', 'Goa', 450)");
-CALL expect_error('T3', 'Second details row for a travel claim (primary key)',
-    "INSERT INTO travel_reimbursement VALUES (1, 'Pune', 'Goa', 450)");
-
--- T4: supervision tree ------------------------------------------------------------------
-CALL expect_error('T4', 'Rahul supervises himself',
-    "UPDATE employee SET supervisor_id = 2 WHERE employee_id = 2");
-CALL expect_error('T4', 'Anita reports to Karan (Karan → team lead → Rahul → Anita: a cycle)',
-    "UPDATE employee SET supervisor_id = 10 WHERE employee_id = 1");
-CALL expect_ok('T4', 'Karan moves to Vikram as supervisor',
-    "UPDATE employee SET supervisor_id = 6 WHERE employee_id = 10");
 
 ROLLBACK;
 

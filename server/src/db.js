@@ -1,5 +1,6 @@
 // MySQL connection pool and two small helpers.
 import mysql from 'mysql2/promise';
+import { measureDatabase } from './timing.js';
 
 export const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -14,20 +15,36 @@ export const pool = mysql.createPool({
 
 // Runs one statement and returns its rows (or the result header for INSERT/UPDATE/DELETE).
 export async function query(sql, params = []) {
-  const [rows] = await pool.query(sql, params);
-  return rows;
+  const conn = await measureDatabase(() => pool.getConnection(), true);
+  try {
+    const [rows] = await measureDatabase(() => conn.query(sql, params));
+    return rows;
+  } finally {
+    conn.release();
+  }
 }
 
 // Runs fn(conn) inside a transaction: commit if it returns, roll back if it throws.
 export async function transaction(fn) {
-  const conn = await pool.getConnection();
+  const conn = await measureDatabase(() => pool.getConnection(), true);
+  // Wrap only query execution; timing the whole callback would include application work.
+  const timedConn = {
+    query(...args) {
+      return measureDatabase(() => conn.query(...args));
+    },
+
+    execute(...args) {
+      return measureDatabase(() => conn.execute(...args));
+    },
+  };
+
   try {
-    await conn.beginTransaction();
-    const result = await fn(conn);
-    await conn.commit();
+    await measureDatabase(() => conn.beginTransaction());
+    const result = await fn(timedConn);
+    await measureDatabase(() => conn.commit());
     return result;
   } catch (err) {
-    await conn.rollback();
+    await measureDatabase(() => conn.rollback());
     throw err;
   } finally {
     conn.release();

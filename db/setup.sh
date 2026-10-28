@@ -4,6 +4,7 @@
 #   ./db/setup.sh                      # uses the docker-compose MySQL on port 3307
 #   MYSQL_PORT=3306 MYSQL_PWD=... ./db/setup.sh   # any other MySQL 8.0.16+ server
 #
+# Business rules are validated by the frontend and API; 03_triggers.sql removes legacy triggers.
 # WARNING: 01_schema.sql drops reimbursement_db first.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
